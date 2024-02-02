@@ -1,0 +1,34 @@
+{
+  "name": "doginals",
+  "version": "1.0.0",
+  "description": "A minter and protocol for inscriptions on Dogecoin",
+  "main": "doginals.js",
+  "author": "apezord",
+  "license": "MIT",
+  "bin": {
+    "doginals": "doginals.js"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
+  },
+  "dependencies": {
+    "axios": "^1.3.4",
+    "base26": "^0.1.0",
+    "bitcore-lib-doge": "^8.25.46",
+    "cheerio": "^1.0.0-rc.12",
+    "commander": "^11.1.0",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "mime-types": "^2.1.35",
+    "prompts": "^2.4.2",
+    "tiny-secp256k1": "^2.2.3"
+  },
+  "devDependencies": {
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "prettier": "^2.8.8"
+  },
+  "scripts": {
+    "prepare": "husky install"
+  }
+}

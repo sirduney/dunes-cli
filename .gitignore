@@ -1,0 +1,6 @@
+/test
+/node_modules
+bulk-mint.sh
+docker-compose.yaml
+.wallet.json
+.env
