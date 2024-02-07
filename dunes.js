@@ -98,6 +98,7 @@ class Tag {
 
 class Flag {
   static Etch = 0;
+  static Mint = 1;
   static Burn = 127;
 
   static mask(flag) {
@@ -126,17 +127,24 @@ function constructScript(
   const payload = [];
 
   if (etching) {
-    // Setting Etching = true
-    Tag.encode(Tag.Flags, 1, payload);
+    // Setting flags for etching and minting
+    const flags = etching.mint
+      ? Number(Flag.mask(Flag.Etch)) | Number(Flag.mask(Flag.Mint))
+      : Number(Flag.mask(Flag.Etch));
+    Tag.encode(Tag.Flags, flags, payload);
     if (etching.dune) Tag.encode(Tag.Dune, etching.dune, payload);
-    if (etching.deadline) Tag.encode(Tag.Deadline, etching.deadline, payload);
+    if (etching.mint) {
+      // don't include deadline right now
+      //if (etching.mint.deadline) Tag.encode(Tag.Deadline, etching.mint.deadline, payload);
+      if (etching.mint.limit)
+        Tag.encode(Tag.Limit, etching.mint.limit, payload);
+      if (etching.mint.term) Tag.encode(Tag.Term, etching.mint.term, payload);
+    }
     if (etching.divisibility !== 0)
       Tag.encode(Tag.Divisibility, etching.divisibility, payload);
     if (etching.spacers !== 0)
       Tag.encode(Tag.Spacers, etching.spacers, payload);
     if (etching.symbol) Tag.encode(Tag.Symbol, etching.symbol, payload);
-    if (etching.limit) Tag.encode(Tag.Limit, etching.limit, payload);
-    if (etching.term) Tag.encode(Tag.Term, etching.term, payload);
   }
 
   if (defaultOutput !== undefined) {
@@ -257,16 +265,22 @@ class Edict {
   }
 }
 
+class Mint {
+  constructor(deadline, limit, term) {
+    this.deadline = deadline !== undefined ? deadline : null;
+    this.limit = limit !== undefined ? limit : null;
+    this.term = term !== undefined ? term : null;
+  }
+}
+
 class Etching {
   // Constructor for Etching
-  constructor(deadline, divisibility, limit, dune, spacers, symbol, term) {
-    this.deadline = deadline;
+  constructor(divisibility, mint, dune, spacers, symbol) {
     this.divisibility = divisibility;
-    this.limit = limit;
+    this.mint = mint !== undefined ? mint : null;
     this.dune = dune;
     this.spacers = spacers;
     this.symbol = symbol;
-    this.term = term;
   }
 }
 
@@ -492,6 +506,7 @@ program
     );
   });
 
+// sends the full balance of the specified dune
 async function walletSendDunes(
   txhash,
   vout,
@@ -652,78 +667,109 @@ program
     "<term>",
     "Number of blocks after deployment that minting stays open"
   )
-  .argument("<limit>", "Max Supply that can be minted")
+  .argument("<limit>", "Max limit that can be minted in one transaction")
+  .argument("<deadline>", "Unix Timestamp up to which minting stays open")
   .argument("<divisibility>", "divisibility of the dune. Max 38")
   .argument("<symbol>", "symbol")
-  .argument("<mintAll>", "Mints the whole supply in one output")
-  .action(async (tick, term, limit, divisibility, symbol, mintAll) => {
-    console.log("Deploying open Dune...");
-    console.log(tick, term, limit, divisibility, symbol, mintAll);
-
-
-    // should also add a check for which dune length is allowed currently
-    if (symbol && symbol.length != 1) {
-      // Invalid Symbol
-      console.error(
-        `Error: The argument symbol should have exactly 1 character, but is '${symbol}'`
-      );
-      process.exit(1);
-    }
-
-    const spacedDune = spacedDunefromStr(tick);
-
-    const blockcount = await getblockcount();
-    const mininumAtCurrentHeight = minimumAtHeight(blockcount.data.result);
-
-    if (spacedDune.dune.value < mininumAtCurrentHeight) {
-      console.error("Dune characters are invalid at current height.");
-      process.stdout.write(
-        `minimum at current height: ${mininumAtCurrentHeight} possible lowest tick: `
-      );
-      const minAtCurrentHeightObj = { _value: mininumAtCurrentHeight };
-      format.call(minAtCurrentHeightObj, formatter);
-      console.log(`dune: ${tick} value: ${spacedDune.dune.value}`);
-      process.exit(1);
-    }
-
-    // then there is no minting possible after deployment, just while deploying, so atm mintAll must be true then.
-    const etching = new Etching(
-      0,
-      divisibility,
+  .argument(
+    "<mintAll>",
+    "Mints the whole supply in one output if minting is disabled, else it mints the limit for one transaction"
+  )
+  .argument(
+    "<openMint>",
+    "Set this to true to allow minting, taking limit, deadline and term as restrictions"
+  )
+  .action(
+    async (
+      tick,
+      term,
       limit,
-      spacedDune.dune.value,
-      spacedDune.spacers,
-      symbol.charCodeAt(0),
-      term
-    );
+      deadline,
+      divisibility,
+      symbol,
+      mintAll,
+      openMint
+    ) => {
+      console.log("Deploying open Dune...");
+      console.log(
+        tick,
+        term,
+        limit,
+        deadline,
+        divisibility,
+        symbol,
+        mintAll,
+        openMint
+      );
 
-    const edicts = mintAll ? [new Edict(0, limit, 1)] : [];
+      mintAll = mintAll.toLowerCase() === "true";
+      openMint = openMint.toLowerCase() === "true";
 
-    // create script for given dune statements
-    const script = constructScript(etching, undefined, null, edicts);
+      // should also add a check for which dune length is allowed currently
+      if (symbol && symbol.length != 1) {
+        // Invalid Symbol
+        console.error(
+          `Error: The argument symbol should have exactly 1 character, but is '${symbol}'`
+        );
+        process.exit(1);
+      }
 
-    // getting the wallet balance
-    let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
-    let balance = wallet.utxos.reduce((acc, curr) => acc + curr.satoshis, 0);
-    if (balance == 0) throw new Error("no funds");
+      const spacedDune = spacedDunefromStr(tick);
 
-    // creating new tx
-    let tx = new Transaction();
+      const blockcount = await getblockcount();
+      const mininumAtCurrentHeight = minimumAtHeight(blockcount.data.result);
 
-    // first output carries the protocol message
-    tx.addOutput(
-      new dogecore.Transaction.Output({ script: script, satoshis: 0 })
-    );
+      if (spacedDune.dune.value < mininumAtCurrentHeight) {
+        console.error("Dune characters are invalid at current height.");
+        process.stdout.write(
+          `minimum at current height: ${mininumAtCurrentHeight} possible lowest tick: `
+        );
+        const minAtCurrentHeightObj = { _value: mininumAtCurrentHeight };
+        format.call(minAtCurrentHeightObj, formatter);
+        console.log(`dune: ${tick} value: ${spacedDune.dune.value}`);
+        process.exit(1);
+      }
 
-    // Create second output to sender if all dunes are directly minted in deployment
-    if (mintAll) tx.to(wallet.address, 100_000);
+      const mint = openMint ? new Mint(deadline, limit, term) : null;
 
-    await fund(wallet, tx);
+      // then there is no minting possible after deployment, just while deploying, so atm mintAll must be true then.
+      const etching = new Etching(
+        divisibility,
+        mint,
+        spacedDune.dune.value,
+        spacedDune.spacers,
+        symbol.charCodeAt(0)
+      );
 
-    await broadcast(tx, true);
+      // If mintAll is set, mint all dunes to output 1 of deployment transaction meaning that limit = max supply if minting is disabled
+      const edicts = mintAll ? [new Edict(0, limit, 1)] : [];
 
-    console.log(tx.hash);
-  });
+      // create script for given dune statements
+      const script = constructScript(etching, undefined, null, edicts);
+
+      // getting the wallet balance
+      let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
+      let balance = wallet.utxos.reduce((acc, curr) => acc + curr.satoshis, 0);
+      if (balance == 0) throw new Error("no funds");
+
+      // creating new tx
+      let tx = new Transaction();
+
+      // first output carries the protocol message
+      tx.addOutput(
+        new dogecore.Transaction.Output({ script: script, satoshis: 0 })
+      );
+
+      // Create second output to sender if all dunes are directly minted in deployment
+      if (mintAll) tx.to(wallet.address, 100_000);
+
+      await fund(wallet, tx);
+
+      await broadcast(tx, true);
+
+      console.log(tx.hash);
+    }
+  );
 
 const walletCommand = program
   .command("wallet")
