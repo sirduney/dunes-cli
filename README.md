@@ -28,7 +28,7 @@ Install by git clone (requires git and node on your computer)
 #### git clone
 
 ```
-git clone https://github.com/verydogelabs/do20nals.git
+git clone https://github.com/sirduney/dunes-cli.git
 ```
 
 **or**
@@ -48,23 +48,21 @@ After all dependencies are solved, you can configure the environment:
 
 ### Configure environment
 
-Copy a `.env.example` to `.env` and add your node information:
+Copy a `.env.example` to `.env` and add your node information. Here are also some recommended settings:
 
 ```
-PROTOCOL_IDENTIFIER=
+PROTOCOL_IDENTIFIER=D
 NODE_RPC_URL=http://<ip>:<port>
 # This is optional if you have an RPC from getblock.io
 NODE_RPC_USER=<username>
 NODE_RPC_PASS=<password>
 TESTNET=false
 FEE_PER_KB=500000000
+UNSPENT_API=https://dogechain.info/api/v1/unspent
+ORD=https://ord.dunesprotocol.com/
 ```
 
 You can get the current fee per kb from [here](https://blockchair.com/).
-
-## Dunes
-
-todo
 
 ## Funding
 
@@ -91,6 +89,34 @@ When you are done minting, send the funds back:
 ```
 node dunes.js wallet send <address> <amount>
 ```
+
+## Dunes
+
+Deploy a dune: 
+
+```
+node dunes.js deployOpenDune 'RANDOM DUNE NAME' <blocks> <limit-per-mint> <timestamp-deadline> <decimals> <symbol> <mint-self> <is-open>
+```
+
+Example for a dune that can be minted for 100 blocks, with a limit of 100000000, a deadline of 0, 8 decimals, symbol R. First `true` value means 1R is minted during deploy. Second `true` means mints are open. 
+
+```
+node dunes.js deployOpenDune 'RANDOM DUNE NAME' 100 100000000 0 8 R true true
+```
+
+Mint a dune: 
+
+```
+node dunes.js mintDune <id> <amount> <to>
+```
+
+Example: 
+
+```
+node dunes.js mintDune '5088000/50' 100000000 DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
+```
+
+Get the ID from: https://ord.dunesprotocol.com/dunes
 
 ## FAQ
 
