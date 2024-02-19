@@ -16,7 +16,7 @@ Please head over to [https://nodejs.org/en/download](https://nodejs.org/en/downl
 
 ### Launch your own RPC
 
-In order to inscribe, you will need to have access to a Dodgecoin RPC. For example: [https://getblock.io/](https://getblock.io/) provides a service to get access to an RPC.
+In order to inscribe, you will need to have access to a Dogecoin RPC. For example: [https://getblock.io/](https://getblock.io/) provides a service to get access to an RPC.
 You will need that for the configuration.
 
 ## Setup
