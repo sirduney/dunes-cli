@@ -425,6 +425,29 @@ program
   });
 
 program
+  .command("printDuneBalance")
+  .argument("<dune_name>", "Dune name")
+  .argument("<address>", "Wallet address")
+  .description("Prints tick balance of wallet")
+  .action(async (dune_name, address) => {
+    const utxos = await getAddressUtxos(address);
+    let balance = 0n;
+    let symbol;
+    for (const [index, utxo] of utxos.entries()) {
+      const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
+      const amount = dunesOnUtxo
+        .filter(({ dune }) => dune === dune_name)
+        .map(({ amount }) => {
+          symbol = amount.match(/[a-zA-Z▣]+/)[0];
+          return BigInt(amount.match(/^(\d+)/)[1]);
+        });
+      if (amount > 0) balance += amount[0];
+    }
+    if (symbol) console.log(`${balance.toString()} ${symbol}`);
+    else console.log(0);
+  });
+
+program
   .command("printSafeUtxos")
   .description("Prints utxos that are safe to spend")
   .action(async () => {
@@ -857,6 +880,28 @@ async function walletSync() {
   let balance = wallet.utxos.reduce((acc, curr) => acc + curr.satoshis, 0);
 
   console.log("balance", balance);
+}
+
+async function getAddressUtxos(address) {
+  if (!process.env.UNSPENT_API) {
+    throw new Error("UNSPENT_API not set");
+  }
+
+  const unspentApi = axios.create({
+    baseURL: process.env.UNSPENT_API,
+    timeout: 100_000,
+  });
+
+  let response = await unspentApi.get(`${address}`);
+
+  return response.data.unspent_outputs.map((output) => {
+    return {
+      txid: output.tx_hash,
+      vout: output.tx_output_n,
+      script: output.script,
+      satoshis: Number(output.value),
+    };
+  });
 }
 
 function walletBalance() {
