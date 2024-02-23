@@ -671,7 +671,7 @@ program
     // add receiver output holding dune amount
     tx.to(receiver, 100_000);
 
-    await fund(wallet, tx);
+    await fund(wallet, tx, false);
 
     try {
       await broadcast(tx, true);
@@ -955,12 +955,17 @@ async function walletSplit(splits) {
   console.log(tx.hash);
 }
 
-async function fund(wallet, tx) {
+async function fund(wallet, tx, onlySafeUtxos = true) {
   tx.change(wallet.address);
   delete tx._fee;
 
   // we get the utxos without dunes
-  const utxosWithoutDunes = await getUtxosWithOutDunes();
+  let utxosWithoutDunes;
+  if (onlySafeUtxos) {
+    utxosWithoutDunes = await getUtxosWithOutDunes();
+  } else {
+    utxosWithoutDunes = wallet.utxos;
+  }
 
   // we sort the largest utxos first
   const sortedUtxos = utxosWithoutDunes.slice().sort((a, b) => {
