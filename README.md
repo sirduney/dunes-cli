@@ -116,6 +116,18 @@ Example:
 node dunes.js mintDune '5088000/50' 100000000 DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
 ```
 
+Mass mint a dune: 
+
+```
+node dunes.js batchMintDune <id> <amount> <number-of-mints> <to>
+```
+
+Example (this will do 100x mints):
+
+```
+node dunes.js batchMintDune '5088000/50' 100000000 100 DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
+```
+
 Get the ID from: https://ord.dunesprotocol.com/dunes
 
 ## FAQ
