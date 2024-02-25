@@ -130,6 +130,18 @@ node dunes.js batchMintDune '5088000/50' 100000000 100 DTZSTXecLmSXpRGSfht4tAMyq
 
 Get the ID from: https://ord.dunesprotocol.com/dunes
 
+Print the balance of an address:
+
+```
+node dunes.js printDuneBalance <dune-name> <address>
+```
+
+Example: 
+
+```
+node dunes.js printDuneBalance WHO•LET•THE•DUNES•OUT DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
+```
+
 ## FAQ
 
 ### I'm getting ECONNREFUSED errors when minting
