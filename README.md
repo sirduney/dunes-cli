@@ -92,25 +92,25 @@ node dunes.js wallet send <address> <amount>
 
 ## Dunes
 
-Deploy a dune: 
+Deploy a dune:
 
 ```
 node dunes.js deployOpenDune 'RANDOM DUNE NAME' <blocks> <limit-per-mint> <timestamp-deadline> <decimals> <symbol> <mint-self> <is-open>
 ```
 
-Example for a dune that can be minted for 100 blocks, with a limit of 100000000, a deadline of 0, 8 decimals, symbol R. First `true` value means 1R is minted during deploy. Second `true` means mints are open. 
+Example for a dune that can be minted for 100 blocks, with a limit of 100000000, a deadline of 0, 8 decimals, symbol R (emojis also work). First `true` value means 1R is minted during deploy. Second `true` means mints are open.
 
 ```
 node dunes.js deployOpenDune 'RANDOM DUNE NAME' 100 100000000 0 8 R true true
 ```
 
-Mint a dune: 
+Mint a dune:
 
 ```
 node dunes.js mintDune <id> <amount> <to>
 ```
 
-Example: 
+Example:
 
 ```
 node dunes.js mintDune '5088000/50' 100000000 DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
