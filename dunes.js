@@ -2,6 +2,7 @@
 
 const dogecore = require("bitcore-lib-doge");
 const axios = require("axios");
+const axiosRetry = require("axios-retry").default;
 const cheerio = require("cheerio");
 const fs = require("fs");
 const dotenv = require("dotenv");
@@ -9,6 +10,13 @@ const { PrivateKey, Address, Transaction, Script, Opcode } = dogecore;
 const { program } = require("commander");
 const bb26 = require("base26");
 const prompts = require("prompts");
+
+const axiosRetryOptions = {
+  retries: 10,
+  retryDelay: axiosRetry.exponentialDelay,
+};
+
+axiosRetry(axios, axiosRetryOptions);
 
 dotenv.config();
 
@@ -411,14 +419,38 @@ program
     let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
     const dunes = [];
     const getUtxosWithDunes = [];
-    for (const [index, utxo] of wallet.utxos.entries()) {
-      console.log(`Processing utxo number ${index} of ${wallet.utxos.length}`);
-      const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
-      dunes.push(...dunesOnUtxo);
-      if (dunesOnUtxo.length > 0) {
-        getUtxosWithDunes.push(utxo);
+    const CHUNK_SIZE = 10;
+
+    // Helper function to process a chunk of UTXOs
+    async function processChunk(utxosChunk, startIndex) {
+      const promises = utxosChunk.map((utxo, index) => {
+        console.log(
+          `Processing utxo number ${startIndex + index} of ${
+            wallet.utxos.length
+          }`
+        );
+        return getDunesForUtxo(`${utxo.txid}:${utxo.vout}`).then(
+          (dunesOnUtxo) => {
+            if (dunesOnUtxo.length > 0) {
+              getUtxosWithDunes.push(utxo);
+            }
+            return dunesOnUtxo;
+          }
+        );
+      });
+
+      const results = await Promise.all(promises);
+      for (const result of results) {
+        dunes.push(...result);
       }
     }
+
+    // Process UTXOs in chunks
+    for (let i = 0; i < wallet.utxos.length; i += CHUNK_SIZE) {
+      const chunk = wallet.utxos.slice(i, i + CHUNK_SIZE);
+      await processChunk(chunk, i);
+    }
+
     console.log(dunes);
     console.log(`Total dunes: ${dunes.length}`);
     console.log(`Number of utxos with dunes: ${getUtxosWithDunes.length}`);
@@ -434,6 +466,7 @@ program
     let balance = 0n;
     let symbol;
     for (const [index, utxo] of utxos.entries()) {
+      console.info(`Processing utxo number ${index} of ${utxos.length}`);
       const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
       const amount = dunesOnUtxo
         .filter(({ dune }) => dune === dune_name)
@@ -687,6 +720,14 @@ program
   .argument("<receiver>", "address of the receiver")
   .action(_mintDune);
 
+function isSingleEmoji(str) {
+  const emojiRegex = /[\p{Emoji}]/gu;
+
+  const matches = str.match(emojiRegex);
+
+  return matches ? matches.length === 1 : false;
+}
+
 program
   .command("deployOpenDune")
   .description("Deploy a Dune that is open for mint")
@@ -733,13 +774,13 @@ program
       mintAll = mintAll.toLowerCase() === "true";
       openMint = openMint.toLowerCase() === "true";
 
-      // should also add a check for which dune length is allowed currently
-      if (symbol && symbol.length != 1) {
-        // Invalid Symbol
-        console.error(
-          `Error: The argument symbol should have exactly 1 character, but is '${symbol}'`
-        );
-        process.exit(1);
+      if (symbol) {
+        if (symbol.length !== 1 && !isSingleEmoji(symbol)) {
+          console.error(
+            `Error: The argument symbol should have exactly 1 character, but is '${symbol}'`
+          );
+          process.exit(1);
+        }
       }
 
       const spacedDune = spacedDunefromStr(tick);
@@ -766,7 +807,7 @@ program
         mint,
         spacedDune.dune.value,
         spacedDune.spacers,
-        symbol.charCodeAt(0)
+        symbol.codePointAt()
       );
 
       // If mintAll is set, mint all dunes to output 1 of deployment transaction meaning that limit = max supply if minting is disabled
@@ -990,6 +1031,7 @@ const unspentApi = axios.create({
   baseURL: process.env.UNSPENT_API,
   timeout: 100_000,
 });
+axiosRetry(unspentApi, axiosRetryOptions);
 
 async function fetchAllUnspentOutputs(walletAddress) {
   let page = 1; // Start from the first page
@@ -998,6 +1040,7 @@ async function fetchAllUnspentOutputs(walletAddress) {
 
   while (hasMoreData) {
     try {
+      console.log(`Fetching unspent outputs for page ${page}...`);
       // Fetch data from the API for the given page
       const response = await unspentApi.get(`/${walletAddress}/${page}`);
       const outputs = response.data.unspent_outputs;
