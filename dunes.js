@@ -712,13 +712,12 @@ const _mintDune = async (id, amount, receiver) => {
   console.log(tx.hash);
 };
 
-program
-  .command("mintDune")
-  .description("Mint a dune")
-  .argument("<id>", "id of the dune in format block/index e.g. 5927764/2")
-  .argument("<amount>", "amount to mint")
-  .argument("<receiver>", "address of the receiver")
-  .action(_mintDune);
+function isValidSymbol(str) {
+  // Unicode range for emojis and additional symbol "Đ"
+  const symbolRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{2600}-\u{26FF}\u{2700}-\u{27BF}Đ]/gu;
+
+  return symbolRegex.test(str);
+}
 
 function isSingleEmoji(str) {
   const emojiRegex = /[\p{Emoji}]/gu;
@@ -729,59 +728,40 @@ function isSingleEmoji(str) {
 }
 
 program
+  .command("mintDune")
+  .description("Mint a dune")
+  .argument("<id>", "id of the dune in format block/index e.g. 5927764/2")
+  .argument("<amount>", "amount to mint")
+  .argument("<receiver>", "address of the receiver")
+  .action(_mintDune);
+
+program
   .command("deployOpenDune")
   .description("Deploy a Dune that is open for mint")
   .argument("<tick>", "Tick for the dune")
-  .argument(
-    "<term>",
-    "Number of blocks after deployment that minting stays open"
-  )
+  .argument("<term>", "Number of blocks after deployment that minting stays open")
   .argument("<limit>", "Max limit that can be minted in one transaction")
   .argument("<deadline>", "Unix Timestamp up to which minting stays open")
   .argument("<divisibility>", "divisibility of the dune. Max 38")
   .argument("<symbol>", "symbol")
-  .argument(
-    "<mintAll>",
-    "Mints the whole supply in one output if minting is disabled, else it mints the limit for one transaction"
-  )
-  .argument(
-    "<openMint>",
-    "Set this to true to allow minting, taking limit, deadline and term as restrictions"
-  )
-  .action(
-    async (
-      tick,
-      term,
-      limit,
-      deadline,
-      divisibility,
-      symbol,
-      mintAll,
-      openMint
-    ) => {
-      console.log("Deploying open Dune...");
-      console.log(
-        tick,
-        term,
-        limit,
-        deadline,
-        divisibility,
-        symbol,
-        mintAll,
-        openMint
-      );
+  .argument("<mintAll>", "Mints the whole supply in one output if minting is disabled, else it mints the limit for one transaction")
+  .argument("<openMint>", "Set this to true to allow minting, taking limit, deadline and term as restrictions")
+  .action(async (tick, term, limit, deadline, divisibility, symbol, mintAll, openMint) => {
+    console.log("Deploying open Dune...");
+    console.log(tick, term, limit, deadline, divisibility, symbol, mintAll, openMint);
 
-      mintAll = mintAll.toLowerCase() === "true";
-      openMint = openMint.toLowerCase() === "true";
+    mintAll = mintAll.toLowerCase() === "true";
+    openMint = openMint.toLowerCase() === "true";
 
-      if (symbol) {
-        if (symbol.length !== 1 && !isSingleEmoji(symbol)) {
-          console.error(
-            `Error: The argument symbol should have exactly 1 character, but is '${symbol}'`
-          );
-          process.exit(1);
-        }
+    if (symbol) {
+      if (!isValidSymbol(symbol)) {
+        console.error(`Error: The argument symbol should be a valid emoji or the symbol 'Đ', but is '${symbol}'`);
+        process.exit(1);
       }
+    }
+
+    // Rest of your deployment logic goes here
+  });
 
       const spacedDune = spacedDunefromStr(tick);
 
