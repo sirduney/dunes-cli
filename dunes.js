@@ -759,7 +759,6 @@ program
         process.exit(1);
       }
     }
-  });
 
       const spacedDune = spacedDunefromStr(tick);
 
