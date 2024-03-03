@@ -759,8 +759,6 @@ program
         process.exit(1);
       }
     }
-
-    // Rest of your deployment logic goes here
   });
 
       const spacedDune = spacedDunefromStr(tick);
