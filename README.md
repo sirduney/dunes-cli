@@ -58,7 +58,7 @@ NODE_RPC_USER=<username>
 NODE_RPC_PASS=<password>
 TESTNET=false
 FEE_PER_KB=500000000
-UNSPENT_API=https://dogechain.info/api/v1/unspent
+UNSPENT_API=https://unspent.dogeord.io/api/v1/address/unspent/
 ORD=https://ord.dunesprotocol.com/
 ```
 
