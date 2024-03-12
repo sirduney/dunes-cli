@@ -464,20 +464,32 @@ program
   .action(async (dune_name, address) => {
     const utxos = await fetchAllUnspentOutputs(address);
     let balance = 0n;
-    let symbol;
-    for (const [index, utxo] of utxos.entries()) {
-      console.info(`Processing utxo number ${index} of ${utxos.length}`);
-      const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
-      const amount = dunesOnUtxo
-        .filter(({ dune }) => dune === dune_name)
-        .map(({ amount }) => {
-          symbol = amount.match(/[a-zA-Z▣]+/)[0];
-          return BigInt(amount.match(/^(\d+)/)[1]);
-        });
-      if (amount > 0) balance += amount[0];
+    const utxoHashes = utxos.map(utxo => `${utxo.txid}:${utxo.vout}`);
+    const chunkSize = 50; // Size of each chunk
+
+    // Function to chunk the utxoHashes array
+    const chunkedUtxoHashes = [];
+    for (let i = 0; i < utxoHashes.length; i += chunkSize) {
+      chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
     }
-    if (symbol) console.log(`${balance.toString()} ${symbol}`);
-    else console.log(0);
+
+    // Process each chunk
+    for (const chunk of chunkedUtxoHashes) {
+      const allDunes = await getDunesForUtxos(chunk);
+
+      for (const dunesInfo of allDunes) {
+        for (const singleDunesInfo of dunesInfo.dunes) {
+          const [name, { amount }] = singleDunesInfo;
+          
+          if (name === dune_name) {
+            balance += BigInt(amount);
+          }
+        }
+      }
+    }
+
+    // Output the total balance
+    console.log(`${balance.toString()} ${dune_name}`);
   });
 
 program
@@ -1319,6 +1331,31 @@ async function broadcast(tx, retry) {
   fs.writeFileSync(WALLET_PATH, JSON.stringify(wallet, 0, 2));
 }
 
+async function getDunesForUtxos(hashes) {
+  const ordApi = axios.create({
+    baseURL: process.env.ORD,
+    timeout: 100_000,
+  });
+
+  try {
+    const response = await ordApi.get(`/outputs/${hashes.join(",")}`);
+    const parsed = response.data;
+
+    const dunes = [];
+
+    parsed.forEach((output) => {
+      if (output.dunes.length > 0) {
+        dunes.push({ dunes: output.dunes, utxo: output.txid });
+      }
+    }, []);
+
+    return dunes;
+  } catch (error) {
+    console.error("Error fetching or parsing data:", error);
+    throw error;
+  }
+}
+
 async function getDunesForUtxo(outputHash) {
   const ordApi = axios.create({
     baseURL: process.env.ORD,
@@ -1349,6 +1386,7 @@ async function getDunesForUtxo(outputHash) {
     throw error;
   }
 }
+
 async function getDune(dune) {
   const ordApi = axios.create({
     baseURL: process.env.ORD,
