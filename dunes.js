@@ -577,6 +577,21 @@ program
     }
   });
 
+program
+  .command("sendDunesNoProtocol")
+  .description("Send dunes but without a protocol message")
+  .argument("<address>", "Receiver's address")
+  .argument("<utxo-amount>", "Number of dune utxos to send")
+  .argument("<dune>", "Dune to send")
+  .action(async (address, utxoAmount, dune) => {
+    try {
+      await walletSendDunesNoProtocol(address, utxoAmount, dune);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  });
+
 // sends the full balance of the specified dune
 async function walletSendDunes(
   txhash,
@@ -681,6 +696,55 @@ async function walletSendDunes(
   await broadcast(tx, true);
 
   console.log(tx.hash);
+}
+
+async function walletSendDunesNoProtocol(
+  address,
+  utxoAmount,
+  dune
+) {
+  let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
+
+  const gas_utxo = wallet.utxos.find(
+    (utxo) => utxo.satoshis > 100_000_000
+  );
+
+  if (!gas_utxo) {
+    throw new Error(`no gas utxo found`);
+  }
+
+  let dunesUtxosValue = 0;
+  const dunesUtxos = [];
+  for (const utxo of wallet.utxos) {
+    const dunes = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
+    if (dunes.length > 0 && dunesUtxos.length < utxoAmount) {
+      dunesUtxos.push(utxo);
+      dunesUtxosValue += utxo.satoshis;
+    }
+  }
+
+  if (dunesUtxos.length < utxoAmount) {
+    throw new Error(`not enough dune utxos found`);
+  }
+
+  const response = await prompts({
+    type: "confirm",
+    name: "value",
+    message: `Transferring ${utxoAmount} utxos of ${dune}. Are you sure you want to proceed?`,
+    initial: true,
+  });
+
+  if (!response.value) {
+    throw new Error("Transaction aborted");
+  }
+
+  let tx = new Transaction();
+  tx.from(dunesUtxos);
+  tx.to(address, dunesUtxosValue);
+  await fund(wallet, tx);
+
+  const res = await broadcast(tx, true);
+  console.log(`Broadcasted ${res}`);
 }
 
 const _mintDune = async (id, amount, receiver) => {
@@ -938,7 +1002,7 @@ program
     for (let i = 0; i < amountOfMints; i++) {
       splitTx.to(wallet.address, totalDogeNeededPerMint);
     }
-    await fund(wallet, splitTx, false);
+    await fund(wallet, splitTx);
 
     /** CREATING THE ETCH TXS */
     const unsignedEtchingTxs = [];
@@ -1144,11 +1208,8 @@ async function walletSplit(splits) {
   console.log(tx.hash);
 }
 
-async function fund(wallet, tx, onlySafeUtxos = true, isMassMint = false) {
+async function fund(wallet, tx, onlySafeUtxos = true) {
   tx.change(wallet.address);
-  if (!isMassMint) {
-    delete tx._fee;
-  }
 
   // we get the utxos without dunes
   let utxosWithoutDunes;
@@ -1173,33 +1234,20 @@ async function fund(wallet, tx, onlySafeUtxos = true, isMassMint = false) {
       tx.inputs.length &&
       tx.outputs.length &&
       tx.inputAmount >= tx.outputAmount + tx.getFee() &&
+      tx.inputAmount >= tx.outputAmount &&
       tx.inputAmount >= 1_500_000
     ) {
       break;
     }
 
-    if (isMassMint && tx.inputAmount >= tx.outputAmount) {
-      break;
-    }
-
-    if (!isMassMint) {
-      delete tx._fee;
-    }
-
     utxo.vout = Number(utxo.vout);
     utxo.satoshis = Number(utxo.satoshis);
     tx.from(utxo);
-    tx.change(wallet.address);
+    delete tx._fee;
 
-    if (isMassMint) {
-      delete tx._fee;
-    }
+    tx.change(wallet.address);
   }
   tx.sign(wallet.privkey);
-
-  if (isMassMint) {
-    delete tx._fee;
-  }
 
   if (tx.inputAmount < tx.outputAmount + tx.getFee()) {
     throw new Error("not enough (secure) funds");
