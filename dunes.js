@@ -464,20 +464,32 @@ program
   .action(async (dune_name, address) => {
     const utxos = await fetchAllUnspentOutputs(address);
     let balance = 0n;
-    let symbol;
-    for (const [index, utxo] of utxos.entries()) {
-      console.info(`Processing utxo number ${index} of ${utxos.length}`);
-      const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
-      const amount = dunesOnUtxo
-        .filter(({ dune }) => dune === dune_name)
-        .map(({ amount }) => {
-          symbol = amount.match(/[a-zA-Z▣]+/)[0];
-          return BigInt(amount.match(/^(\d+)/)[1]);
-        });
-      if (amount > 0) balance += amount[0];
+    const utxoHashes = utxos.map(utxo => `${utxo.txid}:${utxo.vout}`);
+    const chunkSize = 50; // Size of each chunk
+
+    // Function to chunk the utxoHashes array
+    const chunkedUtxoHashes = [];
+    for (let i = 0; i < utxoHashes.length; i += chunkSize) {
+      chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
     }
-    if (symbol) console.log(`${balance.toString()} ${symbol}`);
-    else console.log(0);
+
+    // Process each chunk
+    for (const chunk of chunkedUtxoHashes) {
+      const allDunes = await getDunesForUtxos(chunk);
+
+      for (const dunesInfo of allDunes) {
+        for (const singleDunesInfo of dunesInfo.dunes) {
+          const [name, { amount }] = singleDunesInfo;
+          
+          if (name === dune_name) {
+            balance += BigInt(amount);
+          }
+        }
+      }
+    }
+
+    // Output the total balance
+    console.log(`${balance.toString()} ${dune_name}`);
   });
 
 program
@@ -559,6 +571,21 @@ program
         amountsAsArray,
         addressesAsArray
       );
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("sendDunesNoProtocol")
+  .description("Send dunes but without a protocol message")
+  .argument("<address>", "Receiver's address")
+  .argument("<utxo-amount>", "Number of dune utxos to send")
+  .argument("<dune>", "Dune to send")
+  .action(async (address, utxoAmount, dune) => {
+    try {
+      await walletSendDunesNoProtocol(address, utxoAmount, dune);
     } catch (error) {
       console.error(error);
       process.exit(1);
@@ -669,6 +696,55 @@ async function walletSendDunes(
   await broadcast(tx, true);
 
   console.log(tx.hash);
+}
+
+async function walletSendDunesNoProtocol(
+  address,
+  utxoAmount,
+  dune
+) {
+  let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
+
+  const gas_utxo = wallet.utxos.find(
+    (utxo) => utxo.satoshis > 100_000_000
+  );
+
+  if (!gas_utxo) {
+    throw new Error(`no gas utxo found`);
+  }
+
+  let dunesUtxosValue = 0;
+  const dunesUtxos = [];
+  for (const utxo of wallet.utxos) {
+    const dunes = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
+    if (dunes.length > 0 && dunesUtxos.length < utxoAmount) {
+      dunesUtxos.push(utxo);
+      dunesUtxosValue += utxo.satoshis;
+    }
+  }
+
+  if (dunesUtxos.length < utxoAmount) {
+    throw new Error(`not enough dune utxos found`);
+  }
+
+  const response = await prompts({
+    type: "confirm",
+    name: "value",
+    message: `Transferring ${utxoAmount} utxos of ${dune}. Are you sure you want to proceed?`,
+    initial: true,
+  });
+
+  if (!response.value) {
+    throw new Error("Transaction aborted");
+  }
+
+  let tx = new Transaction();
+  tx.from(dunesUtxos);
+  tx.to(address, dunesUtxosValue);
+  await fund(wallet, tx);
+
+  const res = await broadcast(tx, true);
+  console.log(`Broadcasted ${res}`);
 }
 
 const _mintDune = async (id, amount, receiver) => {
@@ -903,7 +979,7 @@ program
     for (let i = 0; i < amountOfMints; i++) {
       splitTx.to(wallet.address, totalDogeNeededPerMint);
     }
-    await fund(wallet, splitTx, false);
+    await fund(wallet, splitTx);
 
     /** CREATING THE ETCH TXS */
     const unsignedEtchingTxs = [];
@@ -1109,11 +1185,8 @@ async function walletSplit(splits) {
   console.log(tx.hash);
 }
 
-async function fund(wallet, tx, onlySafeUtxos = true, isMassMint = false) {
+async function fund(wallet, tx, onlySafeUtxos = true) {
   tx.change(wallet.address);
-  if (!isMassMint) {
-    delete tx._fee;
-  }
 
   // we get the utxos without dunes
   let utxosWithoutDunes;
@@ -1138,33 +1211,20 @@ async function fund(wallet, tx, onlySafeUtxos = true, isMassMint = false) {
       tx.inputs.length &&
       tx.outputs.length &&
       tx.inputAmount >= tx.outputAmount + tx.getFee() &&
+      tx.inputAmount >= tx.outputAmount &&
       tx.inputAmount >= 1_500_000
     ) {
       break;
     }
 
-    if (isMassMint && tx.inputAmount >= tx.outputAmount) {
-      break;
-    }
-
-    if (!isMassMint) {
-      delete tx._fee;
-    }
-
     utxo.vout = Number(utxo.vout);
     utxo.satoshis = Number(utxo.satoshis);
     tx.from(utxo);
-    tx.change(wallet.address);
+    delete tx._fee;
 
-    if (isMassMint) {
-      delete tx._fee;
-    }
+    tx.change(wallet.address);
   }
   tx.sign(wallet.privkey);
-
-  if (isMassMint) {
-    delete tx._fee;
-  }
 
   if (tx.inputAmount < tx.outputAmount + tx.getFee()) {
     throw new Error("not enough (secure) funds");
@@ -1296,6 +1356,31 @@ async function broadcast(tx, retry) {
   fs.writeFileSync(WALLET_PATH, JSON.stringify(wallet, 0, 2));
 }
 
+async function getDunesForUtxos(hashes) {
+  const ordApi = axios.create({
+    baseURL: process.env.ORD,
+    timeout: 100_000,
+  });
+
+  try {
+    const response = await ordApi.get(`/outputs/${hashes.join(",")}`);
+    const parsed = response.data;
+
+    const dunes = [];
+
+    parsed.forEach((output) => {
+      if (output.dunes.length > 0) {
+        dunes.push({ dunes: output.dunes, utxo: output.txid });
+      }
+    }, []);
+
+    return dunes;
+  } catch (error) {
+    console.error("Error fetching or parsing data:", error);
+    throw error;
+  }
+}
+
 async function getDunesForUtxo(outputHash) {
   const ordApi = axios.create({
     baseURL: process.env.ORD,
@@ -1326,6 +1411,7 @@ async function getDunesForUtxo(outputHash) {
     throw error;
   }
 }
+
 async function getDune(dune) {
   const ordApi = axios.create({
     baseURL: process.env.ORD,

@@ -58,7 +58,7 @@ NODE_RPC_USER=<username>
 NODE_RPC_PASS=<password>
 TESTNET=false
 FEE_PER_KB=500000000
-UNSPENT_API=https://dogechain.info/api/v1/unspent
+UNSPENT_API=https://unspent.dogeord.io/api/v1/address/unspent/
 ORD=https://ord.dunesprotocol.com/
 ```
 
@@ -140,6 +140,30 @@ Example:
 
 ```
 node dunes.js printDuneBalance WHO•LET•THE•DUNES•OUT DTZSTXecLmSXpRGSfht4tAMyqra1wsL7xb
+```
+
+Split dunes from one output to many:
+
+```
+node dunes.js sendDuneMulti <txhash> <vout> <dune> <decimals> <amounts> <addresses>
+```
+
+Example: 
+
+```
+node dunes.js sendDuneMulti 15a0d646c03e52c3bf66d67c910caa9aa30e40ecf27f495f1b9c307a4ac09c2e 1 WHO•LET•THE•DUNES•OUT 8 2,3 DDjbkNTHPZAq3f6pzApDzP712V1xqSE2Ya,DTnBdk1evnpbKe1qeCoeATHZnAVtwNR2xe
+```
+
+Combine dunes from multiple outputs to one: 
+
+```
+node dunes.js sendDunesNoProtocol <address> <utxo-amount> <dune>
+```
+
+Example: 
+
+```
+node dunes.js sendDunesNoProtocol DDjbkNTHPZAq3f6pzApDzP712V1xqSE2Ya 10 WHO•LET•THE•DUNES•OUT
 ```
 
 ## FAQ
