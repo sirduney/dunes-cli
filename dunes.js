@@ -94,7 +94,7 @@ class Tag {
   static Nop = 255;
 
   static take(tag, fields) {
-    return fields.get(tag);
+    return fields[tag];
   }
 
   static encode(tag, value, payload) {
@@ -354,8 +354,6 @@ function format(formatter) {
   for (const c of symbol.split("").reverse()) {
     formatter.write(c);
   }
-
-  return formatter.end();
 }
 
 const formatter = {
@@ -363,9 +361,6 @@ const formatter = {
   write(str) {
     this.output += str;
     return this;
-  },
-  end() {
-    console.log(this.output);
   },
 };
 
@@ -865,12 +860,12 @@ program
       const mininumAtCurrentHeight = minimumAtHeight(blockcount.data.result);
 
       if (spacedDune.dune.value < mininumAtCurrentHeight) {
-        console.error("Dune characters are invalid at current height.");
-        process.stdout.write(
-          `minimum at current height: ${mininumAtCurrentHeight} possible lowest tick: `
-        );
         const minAtCurrentHeightObj = { _value: mininumAtCurrentHeight };
         format.call(minAtCurrentHeightObj, formatter);
+        console.error("Dune characters are invalid at current height.");
+        process.stdout.write(
+          `minimum at current height: ${mininumAtCurrentHeight} possible lowest tick: ${formatter.output}\n`
+        );
         console.log(`dune: ${tick} value: ${spacedDune.dune.value}`);
         process.exit(1);
       }
@@ -915,6 +910,190 @@ program
       console.log(tx.hash);
     }
   );
+
+async function parseScriptString(scriptString) {
+  const parts = scriptString.split(" ");
+
+  // Check if there is an OP_RETURN contained in the script string
+  if (parts.indexOf("OP_RETURN") === -1) {
+    throw new Error("No OP_RETURN output");
+  }
+
+  // Find the indices of the 'OP_PUSHBYTES' instructions
+  const pushBytesIndices = parts.reduce((indices, part, index) => {
+    if (part.startsWith("OP_PUSHBYTES")) {
+      indices.push(index + 1);
+    }
+    return indices;
+  }, []);
+
+  // If 'OP_PUSHBYTES' not found, assume we got 'OP_RETURN identifier msg' format
+  if (pushBytesIndices.length < 2) {
+    pushBytesIndices.push(1);
+    pushBytesIndices.push(2);
+  }
+
+  // Extract identifier and message
+  const identifier = parts[pushBytesIndices[0]];
+
+  /**
+   * Check Protocol Identifier
+   * Ord and most other explorers show this in hex representation.
+   * Some explorers show this in decimal representation,
+   * therefore we check both.
+   **/
+  if (identifier != IDENTIFIER) {
+    if (parseInt(identifier, 16) != IDENTIFIER) {
+      throw new Error("Couldn't find correct Protocol Identifier.");
+    }
+  }
+
+  const msg = parts[pushBytesIndices[1]];
+
+  // Parse msg to payload bytes
+  const payload = [];
+  for (let i = 0; i < msg.length; i += 2) {
+    payload.push(parseInt(msg.substr(i, 2), 16));
+  }
+
+  return payload;
+}
+
+async function decodePayload(payload) {
+  const integers = [];
+  let i = 0;
+
+  while (i < payload.length) {
+    const [integer, length] = varIntDecode(payload.slice(i));
+    integers.push(integer);
+    i += length;
+  }
+
+  return integers;
+}
+
+function varIntDecode(buffer) {
+  let n = 0n;
+  let i = 0;
+
+  while (true) {
+    if (i < buffer.length) {
+      const b = BigInt(parseInt(buffer[i], 10));
+      n = n * 128n;
+
+      if (b < 128) {
+        return [n + b, i + 1];
+      }
+
+      n = n + b - 127n;
+
+      i++;
+    } else {
+      return [n, i];
+    }
+  }
+}
+
+function parseIntegers(integers) {
+  const edicts = [];
+  const fields = {};
+
+  for (let i = 0; i < integers.length; i += 2) {
+    const tag = integers[i];
+    if (tag === BigInt(Tag.Body)) {
+      let id = 0n;
+      for (let j = i + 1; j < integers.length; j += 3) {
+        const chunk = integers.slice(j, j + 3);
+        id = id + BigInt(parseInt(chunk[0], 10));
+        edicts.push({
+          id,
+          amount: chunk[1],
+          output: chunk[2],
+        });
+      }
+      break;
+    }
+
+    if (i + 1 <= integers.length) {
+      const value = integers[i + 1];
+      if (!fields[tag]) fields[tag] = value;
+    } else {
+      break;
+    }
+  }
+
+  return { fields, edicts };
+}
+
+function writeDuneWithSpacers(dune, spacers) {
+  let output = "";
+
+  for (let i = 0n; i < dune.length; i++) {
+    const c = dune[i];
+    output += c;
+
+    if (i < dune.length - 1 && (spacers & (1n << i)) !== 0n) {
+      output += "•";
+    }
+  }
+
+  return output;
+}
+
+program
+  .command("decodeDunesScript")
+  .description("Decode an OP_RETURN Dunes Script")
+  .argument("<script>", "Script from OP_RETURN output in tx")
+  .action(async (script) => {
+    const payload = await parseScriptString(script);
+    const payloadIntegers = await decodePayload(payload);
+    const { fields, edicts } = parseIntegers(payloadIntegers);
+
+    let flags = Tag.take(Tag.Flags, fields);
+    if (flags === undefined) flags = 0n;
+
+    let isMintable = Flag.take(Flag.Mint, flags);
+    let burn = Flag.take(Flag.Burn, flags);
+    let isEtching = Flag.take(Flag.Etch, flags);
+
+    // Show if this transaction burns dunes
+    if (burn) console.log("Dunes burning");
+
+    // Show Etching if there is one
+    if (isEtching) {
+      let deadline = Tag.take(Tag.Deadline, fields);
+      let default_output = Tag.take(Tag.DefaultOutput, fields);
+      let divisibility = Tag.take(Tag.Divisibility, fields);
+      let limit = Tag.take(Tag.Limit, fields);
+      let dune = Tag.take(Tag.Dune, fields);
+      let spacers = Tag.take(Tag.Spacers, fields);
+      let symbol = Tag.take(Tag.Symbol, fields);
+      let term = Tag.take(Tag.Term, fields);
+
+      // Parse dune value to Spaced Dune as String
+      const minAtCurrentHeightObj = { _value: dune };
+      format.call(minAtCurrentHeightObj, formatter);
+      const spacedDuneStr = writeDuneWithSpacers(formatter.output, spacers);
+      symbol = String.fromCodePoint(parseInt(symbol, 10));
+
+      console.log(
+        `Deployment of Dune\n${spacedDuneStr}\nMintable: ${isMintable}\nDeadline: ${deadline}\nTerm: ${term}\nLimit: ${limit}\nDivisibility: ${divisibility}\nDefault Output: ${default_output}\nSymbol: ${symbol}`
+      );
+    }
+
+    // Show Mints if there are any
+    if (edicts.length > 0) {
+      const stringifiedArray = edicts.map((obj) => {
+        return {
+          id: obj.id.toString(),
+          amount: obj.amount.toString(),
+          output: obj.output.toString(),
+        };
+      });
+      const jsonString = `Mints:\n${JSON.stringify(stringifiedArray, null, 2)}`;
+      console.log(jsonString);
+    }
+  });
 
 const createUnsignedEtchTxFromUtxo = (
   utxo,
