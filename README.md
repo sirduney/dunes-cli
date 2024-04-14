@@ -59,7 +59,7 @@ NODE_RPC_PASS=<password>
 TESTNET=false
 FEE_PER_KB=500000000
 UNSPENT_API=https://unspent.dogeord.io/api/v1/address/unspent/
-ORD=https://ord.dunesprotocol.com/
+ORD=https://wonky-ord.dogeord.io/
 ```
 
 You can get the current fee per kb from [here](https://blockchair.com/).
