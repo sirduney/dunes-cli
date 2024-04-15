@@ -460,7 +460,7 @@ program
     const utxos = await fetchAllUnspentOutputs(address);
     let balance = 0n;
     const utxoHashes = utxos.map(utxo => `${utxo.txid}:${utxo.vout}`);
-    const chunkSize = 50; // Size of each chunk
+    const chunkSize = 10; // Size of each chunk
 
     // Function to chunk the utxoHashes array
     const chunkedUtxoHashes = [];
@@ -475,7 +475,7 @@ program
       for (const dunesInfo of allDunes) {
         for (const singleDunesInfo of dunesInfo.dunes) {
           const [name, { amount }] = singleDunesInfo;
-          
+
           if (name === dune_name) {
             balance += BigInt(amount);
           }
@@ -499,16 +499,23 @@ program
 const getUtxosWithOutDunes = async () => {
   let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
-  const safeUtxos = [];
-  for (const [index, utxo] of wallet.utxos.entries()) {
-    console.log(`Processing utxo number ${index} of ${wallet.utxos.length}`);
-    const dunesOnUtxo = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
-    if (dunesOnUtxo.length === 0) {
-      safeUtxos.push(utxo);
+  const walletBalanceFromOrd = await axios.get(
+    `${process.env.ORD}dunes/balance/${wallet.address}?show_all=true`
+  );
+
+  const duneOutputMap = new Map();
+  for (const dune of walletBalanceFromOrd.data.dunes) {
+    for (const balance of dune.balances) {
+      duneOutputMap.set(balance.txid, {
+        ...balance,
+        dune: dune.dune
+      });
     }
   }
 
-  return safeUtxos;
+  return wallet.utxos.filter(
+    (utxo) => !duneOutputMap.has(utxo.txid)
+  );
 };
 
 const parseDuneId = (id, claim = false) => {
@@ -580,7 +587,8 @@ program
   .argument("<dune>", "Dune to send")
   .action(async (address, utxoAmount, dune) => {
     try {
-      await walletSendDunesNoProtocol(address, utxoAmount, dune);
+      const res = await walletSendDunesNoProtocol(address, parseInt(utxoAmount), dune);
+      console.info(`Broadcasted transaction: ${JSON.stringify(res)}`);
     } catch (error) {
       console.error(error);
       process.exit(1);
@@ -700,21 +708,50 @@ async function walletSendDunesNoProtocol(
 ) {
   let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
-  const gas_utxo = wallet.utxos.find(
+  const walletBalanceFromOrd = await axios.get(
+    `${process.env.ORD}dunes/balance/${wallet.address}?show_all=true`
+  );
+
+  const duneOutputMap = new Map();
+  for (const dune of walletBalanceFromOrd.data.dunes) {
+    for (const balance of dune.balances) {
+      duneOutputMap.set(balance.txid, {
+        ...balance,
+        dune: dune.dune
+      });
+    }
+  }
+
+  const nonDuneUtxos = wallet.utxos.filter(
+    (utxo) => !duneOutputMap.has(utxo.txid)
+  );
+
+  if (nonDuneUtxos.length === 0) {
+    throw new Error("no utxos without dunes found");
+  }
+
+  const gasUtxo = nonDuneUtxos.find(
     (utxo) => utxo.satoshis > 100_000_000
   );
 
-  if (!gas_utxo) {
+  if (!gasUtxo) {
     throw new Error(`no gas utxo found`);
   }
 
   let dunesUtxosValue = 0;
   const dunesUtxos = [];
+
   for (const utxo of wallet.utxos) {
-    const dunes = await getDunesForUtxo(`${utxo.txid}:${utxo.vout}`);
-    if (dunes.length > 0 && dunesUtxos.length < utxoAmount) {
-      dunesUtxos.push(utxo);
-      dunesUtxosValue += utxo.satoshis;
+    if (dunesUtxos.length >= utxoAmount) {
+      break;
+    }
+
+    if (duneOutputMap.has(utxo.txid)) {
+      const duneOutput = duneOutputMap.get(utxo.txid);
+      if (duneOutput.dune === dune) {
+        dunesUtxos.push(utxo);
+        dunesUtxosValue += utxo.satoshis;
+      }
     }
   }
 
@@ -736,10 +773,9 @@ async function walletSendDunesNoProtocol(
   let tx = new Transaction();
   tx.from(dunesUtxos);
   tx.to(address, dunesUtxosValue);
-  await fund(wallet, tx);
 
-  const res = await broadcast(tx, true);
-  console.log(`Broadcasted ${res}`);
+  await fund(wallet, tx);
+  return await broadcast(tx, true);
 }
 
 const _mintDune = async (id, amount, receiver) => {
@@ -1032,7 +1068,7 @@ function writeDuneWithSpacers(dune, spacers) {
     const c = dune[i];
     output += c;
 
-    if (i < dune.length - 1 && (spacers & (1n << i)) !== 0n) {
+    if (spacers && i < dune.length - 1 && spacers & (1n << i)) {
       output += "•";
     }
   }
@@ -1141,13 +1177,13 @@ program
     let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
     /** CALCULATE FEES PER MINT */
-    // we calculate how much funds we need per mint. We take a random fake input for that
+      // we calculate how much funds we need per mint. We take a random fake input for that
     const utxo = {
-      txid: "52c086a5e206d44f562c1166a93ac1b2f8f95fe5c25d25f798de4228f0c26ff8",
-      vout: 2,
-      script: "76a914fe9c184fee58c13d13be8fccafaeb4ff6172b39088ac",
+        txid: "52c086a5e206d44f562c1166a93ac1b2f8f95fe5c25d25f798de4228f0c26ff8",
+        vout: 2,
+        script: "76a914fe9c184fee58c13d13be8fccafaeb4ff6172b39088ac",
       satoshis: 10 * 1e8, // 10 doge
-    };
+      };
 
     const exampleEtchTx = createUnsignedEtchTxFromUtxo(
       utxo,
@@ -1408,14 +1444,12 @@ async function fund(wallet, tx, onlySafeUtxos = true) {
     return utxo.satoshis >= 1_000_000;
   });
 
+  const outputSum = tx.outputs.reduce((acc, curr) => acc + curr.satoshis, 0);
+  let isChangeAdded = false;
+  let inputSumAdded = 0;
+
   for (const utxo of largeUtxos) {
-    if (
-      tx.inputs.length &&
-      tx.outputs.length &&
-      tx.inputAmount >= tx.outputAmount + tx.getFee() &&
-      tx.inputAmount >= tx.outputAmount &&
-      tx.inputAmount >= 1_500_000
-    ) {
+    if (inputSumAdded >= outputSum + tx._estimateFee()) {
       break;
     }
 
@@ -1425,7 +1459,11 @@ async function fund(wallet, tx, onlySafeUtxos = true) {
     delete tx._fee;
 
     tx.change(wallet.address);
+    isChangeAdded = true;
+    inputSumAdded += utxo.satoshis;
   }
+
+  tx._fee = tx._estimateFee();
   tx.sign(wallet.privkey);
 
   if (tx.inputAmount < tx.outputAmount + tx.getFee()) {
@@ -1524,9 +1562,10 @@ async function broadcast(tx, retry) {
     }
   };
 
+  let res;
   while (true) {
     try {
-      await retryAsync(async () => await makePostRequest(), 10, 30000);
+      res = await retryAsync(async () => await makePostRequest(), 10, 30000);
       break;
     } catch (e) {
       if (!retry) throw e;
@@ -1556,6 +1595,10 @@ async function broadcast(tx, retry) {
   updateWallet(wallet, tx);
 
   fs.writeFileSync(WALLET_PATH, JSON.stringify(wallet, 0, 2));
+
+  if (res) {
+    return res.data;
+  }
 }
 
 async function getDunesForUtxos(hashes) {
