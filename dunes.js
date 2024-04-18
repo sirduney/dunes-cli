@@ -506,7 +506,7 @@ const getUtxosWithOutDunes = async () => {
   const duneOutputMap = new Map();
   for (const dune of walletBalanceFromOrd.data.dunes) {
     for (const balance of dune.balances) {
-      duneOutputMap.set(balance.txid, {
+      duneOutputMap.set(`${balance.txid}:${balance.vout}`, {
         ...balance,
         dune: dune.dune
       });
@@ -514,7 +514,7 @@ const getUtxosWithOutDunes = async () => {
   }
 
   return wallet.utxos.filter(
-    (utxo) => !duneOutputMap.has(utxo.txid)
+    (utxo) => !duneOutputMap.has(`${utxo.txid}:${utxo.vout}`)
   );
 };
 
