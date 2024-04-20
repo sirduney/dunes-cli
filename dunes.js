@@ -540,12 +540,16 @@ const getUtxosWithOutDunes = async () => {
 
 const parseDuneId = (id, claim = false) => {
   // Check if Dune ID is in the expected format
-  const regex = /^\d+\/\d+$/;
-  if (!regex.test(id))
-    console.log(`Dune ID ${id} is not in the expected format e.g. 1234/1`);
+  const regex1 = /^\d+\:\d+$/;
+  const regex2 = /^\d+\/\d+$/;
+
+  if (!regex1.test(id) && !regex2.test(id))
+    console.log(
+      `Dune ID ${id} is not in the expected format e.g. 1234:1 or 1234/1`
+    );
 
   // Parse the id string to get height and index
-  const [heightStr, indexStr] = id.split("/");
+  const [heightStr, indexStr] = regex1.test(id) ? id.split(":") : id.split("/");
   const height = parseInt(heightStr, 10);
   const index = parseInt(indexStr, 10);
 
@@ -1124,7 +1128,6 @@ function writeDuneWithSpacers(dune, spacers) {
   return output;
 }
 
-
 // todo: this needs an update for the protocol changes
 program
   .command("decodeDunesScript")
@@ -1216,7 +1219,7 @@ program.action("getBlockCount").action(async () => {
 // @warning: this method is not dune aware.. so the dunes on the wallet are in danger of being spend
 program
   .command("batchMintDune")
-  .argument("<id>", "id of the dune in format block/index e.g. 5927764/2")
+  .argument("<id>", "id of the dune in format block:index e.g. 5927764:2")
   .argument(
     "<amountPerMint>",
     "amount to mint per mint - consider the divisibility. (0 takes the limit of the dune as amount)"
