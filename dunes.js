@@ -83,10 +83,16 @@ class Tag {
   static Flags = 2;
   static Dune = 4;
   static Limit = 6;
-  static Term = 8;
+  static OffsetEnd = 8;
   static Deadline = 10;
-  static DefaultOutput = 12;
-  static Burn = 254;
+  static Pointer = 12;
+  static HeightStart = 14;
+  static OffsetStart = 16;
+  static HeightEnd = 18;
+  static Cap = 20;
+  static Premine = 22;
+
+  static Cenotaph = 254;
 
   static Divisibility = 1;
   static Spacers = 3;
@@ -106,8 +112,9 @@ class Tag {
 
 class Flag {
   static Etch = 0;
-  static Mint = 1;
-  static Burn = 127;
+  static Terms = 1;
+  static Turbo = 2;
+  static Cenotaph = 127;
 
   static mask(flag) {
     return BigInt(1) << BigInt(flag);
@@ -128,42 +135,50 @@ class Flag {
 // Construct the OP_RETURN dune script with encoding of given values
 function constructScript(
   etching = null,
-  defaultOutput = undefined,
-  burn = null,
+  pointer = undefined,
+  cenotaph = null,
   edicts = []
 ) {
   const payload = [];
 
   if (etching) {
     // Setting flags for etching and minting
-    const flags = etching.mint
-      ? Number(Flag.mask(Flag.Etch)) | Number(Flag.mask(Flag.Mint))
-      : Number(Flag.mask(Flag.Etch));
+    let flags = Number(Flag.mask(Flag.Etch));
+    if (etching.turbo) flags |= Number(Flag.mask(Flag.Turbo));
+    if (etching.terms) flags |= Number(Flag.mask(Flag.Terms));
     Tag.encode(Tag.Flags, flags, payload);
+
     if (etching.dune) Tag.encode(Tag.Dune, etching.dune, payload);
-    if (etching.mint) {
-      // don't include deadline right now
-      //if (etching.mint.deadline) Tag.encode(Tag.Deadline, etching.mint.deadline, payload);
-      if (etching.mint.limit)
-        Tag.encode(Tag.Limit, etching.mint.limit, payload);
-      if (etching.mint.term) Tag.encode(Tag.Term, etching.mint.term, payload);
+    if (etching.terms) {
+      if (etching.terms.limit)
+        Tag.encode(Tag.Limit, etching.terms.limit, payload);
+      if (etching.terms.cap) Tag.encode(Tag.Cap, etching.terms.cap, payload);
+      if (etching.terms.offsetStart)
+        Tag.encode(Tag.OffsetStart, etching.terms.offsetStart, payload);
+      if (etching.terms.offsetEnd)
+        Tag.encode(Tag.OffsetEnd, etching.terms.offsetEnd, payload);
+      if (etching.terms.heightStart)
+        Tag.encode(Tag.HeightStart, etching.terms.heightStart, payload);
+      if (etching.terms.heightEnd)
+        Tag.encode(Tag.HeightEnd, etching.terms.heightEnd, payload);
     }
     if (etching.divisibility !== 0)
       Tag.encode(Tag.Divisibility, etching.divisibility, payload);
     if (etching.spacers !== 0)
       Tag.encode(Tag.Spacers, etching.spacers, payload);
     if (etching.symbol) Tag.encode(Tag.Symbol, etching.symbol, payload);
+    if (etching.premine) Tag.encode(Tag.Premine, etching.premine, payload);
   }
 
-  if (defaultOutput !== undefined) {
-    Tag.encode(Tag.DefaultOutput, defaultOutput, payload);
+  if (pointer !== undefined) {
+    Tag.encode(Tag.Pointer, pointer, payload);
   }
 
-  if (burn) {
-    Tag.encode(Tag.Burn, 0, payload);
+  if (cenotaph) {
+    Tag.encode(Tag.Cenotaph, 0, payload);
   }
 
-  if (edicts.length > 0) {
+  if (edicts && edicts.length > 0) {
     payload.push(varIntEncode(Tag.Body));
 
     const sortedEdicts = edicts.slice().sort((a, b) => {
@@ -273,19 +288,24 @@ class Edict {
   }
 }
 
-class Mint {
-  constructor(deadline, limit, term) {
-    this.deadline = deadline !== undefined ? deadline : null;
+class Terms {
+  constructor(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd) {
     this.limit = limit !== undefined ? limit : null;
-    this.term = term !== undefined ? term : null;
+    this.cap = cap !== undefined ? cap : null;
+    this.offsetStart = offsetStart !== undefined ? offsetStart : null;
+    this.offsetEnd = offsetEnd !== undefined ? offsetEnd : null;
+    this.heightStart = heightStart !== undefined ? heightStart : null;
+    this.heightEnd = heightEnd !== undefined ? heightEnd : null;
   }
 }
 
 class Etching {
   // Constructor for Etching
-  constructor(divisibility, mint, dune, spacers, symbol) {
+  constructor(divisibility, terms, turbo, premine, dune, spacers, symbol) {
     this.divisibility = divisibility;
-    this.mint = mint !== undefined ? mint : null;
+    this.terms = terms !== undefined ? terms : null;
+    this.turbo = turbo !== undefined ? turbo : null;
+    this.premine = premine !== undefined ? premine : null;
     this.dune = dune;
     this.spacers = spacers;
     this.symbol = symbol;
@@ -459,7 +479,7 @@ program
   .action(async (dune_name, address) => {
     const utxos = await fetchAllUnspentOutputs(address);
     let balance = 0n;
-    const utxoHashes = utxos.map(utxo => `${utxo.txid}:${utxo.vout}`);
+    const utxoHashes = utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
     const chunkSize = 10; // Size of each chunk
 
     // Function to chunk the utxoHashes array
@@ -508,7 +528,7 @@ const getUtxosWithOutDunes = async () => {
     for (const balance of dune.balances) {
       duneOutputMap.set(`${balance.txid}:${balance.vout}`, {
         ...balance,
-        dune: dune.dune
+        dune: dune.dune,
       });
     }
   }
@@ -587,7 +607,11 @@ program
   .argument("<dune>", "Dune to send")
   .action(async (address, utxoAmount, dune) => {
     try {
-      const res = await walletSendDunesNoProtocol(address, parseInt(utxoAmount), dune);
+      const res = await walletSendDunesNoProtocol(
+        address,
+        parseInt(utxoAmount),
+        dune
+      );
       console.info(`Broadcasted transaction: ${JSON.stringify(res)}`);
     } catch (error) {
       console.error(error);
@@ -656,7 +680,7 @@ async function walletSendDunes(
   tx.from(dune_utxo);
 
   // we get the dune
-  const { id, divisibility } = await getDune(dune);
+  const { id, divisibility, limit } = await getDune(dune);
   console.log("id", id);
 
   // parse given id string to dune id
@@ -701,11 +725,7 @@ async function walletSendDunes(
   console.log(tx.hash);
 }
 
-async function walletSendDunesNoProtocol(
-  address,
-  utxoAmount,
-  dune
-) {
+async function walletSendDunesNoProtocol(address, utxoAmount, dune) {
   let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
   const walletBalanceFromOrd = await axios.get(
@@ -717,7 +737,7 @@ async function walletSendDunesNoProtocol(
     for (const balance of dune.balances) {
       duneOutputMap.set(balance.txid, {
         ...balance,
-        dune: dune.dune
+        dune: dune.dune,
       });
     }
   }
@@ -730,9 +750,7 @@ async function walletSendDunesNoProtocol(
     throw new Error("no utxos without dunes found");
   }
 
-  const gasUtxo = nonDuneUtxos.find(
-    (utxo) => utxo.satoshis > 100_000_000
-  );
+  const gasUtxo = nonDuneUtxos.find((utxo) => utxo.satoshis > 100_000_000);
 
   if (!gasUtxo) {
     throw new Error(`no gas utxo found`);
@@ -785,6 +803,11 @@ const _mintDune = async (id, amount, receiver) => {
   // Parse given id string to dune id
   const duneId = parseDuneId(id, true);
 
+  if (amount == 0) {
+    const { id_, divisibility, limit } = await getDune(id);
+    amount = BigInt(limit) * BigInt(10 ** divisibility);
+  }
+
   // mint dune with encoded id, amount on output 1
   const edicts = [new Edict(duneId, amount, 1)];
   console.log(edicts);
@@ -821,9 +844,12 @@ const _mintDune = async (id, amount, receiver) => {
 
 program
   .command("mintDune")
-  .description("Mint a dune")
-  .argument("<id>", "id of the dune in format block/index e.g. 5927764/2")
-  .argument("<amount>", "amount to mint")
+  .description("Mint a Dune")
+  .argument("<id>", "id of the dune in format block:index e.g. 5927764:2")
+  .argument(
+    "<amount>",
+    "amount to mint (0 takes the limit of the dune as amount)"
+  )
   .argument("<receiver>", "address of the receiver")
   .action(_mintDune);
 
@@ -839,46 +865,68 @@ program
   .command("deployOpenDune")
   .description("Deploy a Dune that is open for mint")
   .argument("<tick>", "Tick for the dune")
-  .argument(
-    "<term>",
-    "Number of blocks after deployment that minting stays open"
-  )
-  .argument("<limit>", "Max limit that can be minted in one transaction")
-  .argument("<deadline>", "Unix Timestamp up to which minting stays open")
-  .argument("<divisibility>", "divisibility of the dune. Max 38")
   .argument("<symbol>", "symbol")
+  .argument("<limit>", "Max amount that can be minted in one transaction")
+  .argument("<divisibility>", "divisibility of the dune. Max 38")
+  .argument("<cap>", "Max limit that can be minted overall")
+  .argument("<heightStart>", "Absolute block height where minting opens")
+  .argument("<heightEnd>", "Absolute block height where minting closes")
+  .argument("<offsetStart>", "Relative block height where minting opens")
   .argument(
-    "<mintAll>",
-    "Mints the whole supply in one output if minting is disabled, else it mints the limit for one transaction"
+    "<offsetEnd>",
+    "Relative block height where minting closes (former known as term)"
+  )
+  .argument(
+    "<premine>",
+    "Amount of allocated dunes to the etcher while etching"
+  )
+  .argument(
+    "<turbo>",
+    "Marks this etching as opting into future protocol changes."
   )
   .argument(
     "<openMint>",
-    "Set this to true to allow minting, taking limit, deadline and term as restrictions"
+    "Set this to true to allow minting, taking terms (limit, cap, height, offset) as restrictions"
   )
   .action(
     async (
       tick,
-      term,
-      limit,
-      deadline,
-      divisibility,
       symbol,
-      mintAll,
+      limit,
+      divisibility,
+      cap,
+      heightStart,
+      heightEnd,
+      offsetStart,
+      offsetEnd,
+      premine,
+      turbo,
       openMint
     ) => {
       console.log("Deploying open Dune...");
       console.log(
         tick,
-        term,
-        limit,
-        deadline,
-        divisibility,
         symbol,
-        mintAll,
+        limit,
+        divisibility,
+        cap,
+        heightStart,
+        heightEnd,
+        offsetStart,
+        offsetEnd,
+        premine,
+        turbo,
         openMint
       );
 
-      mintAll = mintAll.toLowerCase() === "true";
+      cap = cap === "null" ? null : cap;
+      heightStart = heightStart === "null" ? null : heightStart;
+      heightEnd = heightEnd === "null" ? null : heightEnd;
+      offsetStart = offsetStart === "null" ? null : offsetStart;
+      offsetEnd = offsetEnd === "null" ? null : offsetEnd;
+      premine = premine === "null" ? null : premine;
+      turbo = turbo === "null" ? null : turbo === "true";
+
       openMint = openMint.toLowerCase() === "true";
 
       if (symbol) {
@@ -906,22 +954,22 @@ program
         process.exit(1);
       }
 
-      const mint = openMint ? new Mint(deadline, limit, term) : null;
+      const terms = openMint
+        ? new Terms(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd)
+        : null;
 
-      // then there is no minting possible after deployment, just while deploying, so atm mintAll must be true then.
       const etching = new Etching(
         divisibility,
-        mint,
+        terms,
+        turbo,
+        premine,
         spacedDune.dune.value,
         spacedDune.spacers,
         symbol.codePointAt()
       );
 
-      // If mintAll is set, mint all dunes to output 1 of deployment transaction meaning that limit = max supply if minting is disabled
-      const edicts = mintAll ? [new Edict(0, limit, 1)] : [];
-
       // create script for given dune statements
-      const script = constructScript(etching, undefined, null, edicts);
+      const script = constructScript(etching, undefined, null, null);
 
       // getting the wallet balance
       let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
@@ -936,8 +984,8 @@ program
         new dogecore.Transaction.Output({ script: script, satoshis: 0 })
       );
 
-      // Create second output to sender if all dunes are directly minted in deployment
-      if (mintAll) tx.to(wallet.address, 100_000);
+      // Create second output to sender if dunes are directly allocated in etching
+      if (premine > 0) tx.to(wallet.address, 100_000);
 
       await fund(wallet, tx);
 
@@ -1076,6 +1124,8 @@ function writeDuneWithSpacers(dune, spacers) {
   return output;
 }
 
+
+// todo: this needs an update for the protocol changes
 program
   .command("decodeDunesScript")
   .description("Decode an OP_RETURN Dunes Script")
@@ -1088,23 +1138,23 @@ program
     let flags = Tag.take(Tag.Flags, fields);
     if (flags === undefined) flags = 0n;
 
-    let isMintable = Flag.take(Flag.Mint, flags);
-    let burn = Flag.take(Flag.Burn, flags);
+    let isMintable = Flag.take(Flag.Terms, flags);
+    let cenotaph = Flag.take(Flag.Cenotaph, flags);
     let isEtching = Flag.take(Flag.Etch, flags);
 
     // Show if this transaction burns dunes
-    if (burn) console.log("Dunes burning");
+    if (cenotaph) console.log("Dunes burning");
 
     // Show Etching if there is one
     if (isEtching) {
       let deadline = Tag.take(Tag.Deadline, fields);
-      let default_output = Tag.take(Tag.DefaultOutput, fields);
+      let default_output = Tag.take(Tag.Pointer, fields);
       let divisibility = Tag.take(Tag.Divisibility, fields);
       let limit = Tag.take(Tag.Limit, fields);
       let dune = Tag.take(Tag.Dune, fields);
       let spacers = Tag.take(Tag.Spacers, fields);
       let symbol = Tag.take(Tag.Symbol, fields);
-      let term = Tag.take(Tag.Term, fields);
+      let term = Tag.take(Tag.OffsetEnd, fields);
 
       // Parse dune value to Spaced Dune as String
       const minAtCurrentHeightObj = { _value: dune };
@@ -1169,21 +1219,26 @@ program
   .argument("<id>", "id of the dune in format block/index e.g. 5927764/2")
   .argument(
     "<amountPerMint>",
-    "amount to mint per mint. consider the divisibility"
+    "amount to mint per mint - consider the divisibility. (0 takes the limit of the dune as amount)"
   )
   .argument("<amountOfMints>", "how often you want to mint")
   .argument("<receiver>", "address of the receiver")
   .action(async (id, amountPerMint, amountOfMints, receiver) => {
     let wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
+    if (amountPerMint == 0) {
+      const { id_, divisibility, limit } = await getDune(id);
+      amountPerMint = BigInt(limit) * BigInt(10 ** divisibility);
+    }
+
     /** CALCULATE FEES PER MINT */
-      // we calculate how much funds we need per mint. We take a random fake input for that
+    // we calculate how much funds we need per mint. We take a random fake input for that
     const utxo = {
-        txid: "52c086a5e206d44f562c1166a93ac1b2f8f95fe5c25d25f798de4228f0c26ff8",
-        vout: 2,
-        script: "76a914fe9c184fee58c13d13be8fccafaeb4ff6172b39088ac",
+      txid: "52c086a5e206d44f562c1166a93ac1b2f8f95fe5c25d25f798de4228f0c26ff8",
+      vout: 2,
+      script: "76a914fe9c184fee58c13d13be8fccafaeb4ff6172b39088ac",
       satoshis: 10 * 1e8, // 10 doge
-      };
+    };
 
     const exampleEtchTx = createUnsignedEtchTxFromUtxo(
       utxo,
@@ -1424,8 +1479,6 @@ async function walletSplit(splits) {
 }
 
 async function fund(wallet, tx, onlySafeUtxos = true) {
-  tx.change(wallet.address);
-
   // we get the utxos without dunes
   let utxosWithoutDunes;
   if (onlySafeUtxos) {
@@ -1465,6 +1518,10 @@ async function fund(wallet, tx, onlySafeUtxos = true) {
 
   tx._fee = tx._estimateFee();
   tx.sign(wallet.privkey);
+
+  if (!isChangeAdded) {
+    throw new Error("no change output added");
+  }
 
   if (tx.inputAmount < tx.outputAmount + tx.getFee()) {
     throw new Error("not enough (secure) funds");
@@ -1669,7 +1726,7 @@ async function getDune(dune) {
     const $ = cheerio.load(data);
 
     // Extracting the information
-    let id, divisibility;
+    let id, divisibility, limit;
     $("dl dt").each((index, element) => {
       const label = $(element).text().trim();
       const value = $(element).next("dd").text().trim();
@@ -1678,10 +1735,12 @@ async function getDune(dune) {
         id = value;
       } else if (label === "divisibility") {
         divisibility = value;
+      } else if (label === "amount" || label === "limit") {
+        limit = parseInt(value.replace(/\D/g, ""), 10);
       }
     });
 
-    return { id, divisibility };
+    return { id, divisibility, limit };
   } catch (error) {
     console.error("Error fetching or parsing data:", error);
     throw error;
