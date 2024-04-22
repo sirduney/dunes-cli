@@ -16,7 +16,7 @@ Whereas every inscription is unique, every unit of a dune is the same. They are 
 
 Dune protocol messages, called dunestones, are stored in Dogecoin transaction outputs.
 
-A dunestone output's script pubkey begins with an OP_RETURN, followed by D, followed by zero or more data pushes. These data pushes are concatenated and decoded into a sequence of 128-bit integers, and finally parsed into a dunestone.
+A dunestone output's script pubkey begins with an `OP_RETURN`, followed by `D`, followed by zero or more data pushes. These data pushes are concatenated and decoded into a sequence of 128-bit integers, and finally parsed into a dunestone.
 
 A transaction may have at most one dunestone.
 
@@ -24,7 +24,7 @@ A dunestone may etch a new dune, mint an existing dune, and transfer dunes from 
 
 A transaction output may hold balances of any number of dunes.
 
-Dunes are identified by IDs, which consist of the block in which a dune was etched and the index of the etching transaction within that block, represented in text as BLOCK:TX. For example, the ID of the dune minted in the 20th transaction of the 500th block is 500:20.
+Dunes are identified by IDs, which consist of the block in which a dune was etched and the index of the etching transaction within that block, represented in text as `BLOCK:TX`. For example, the ID of the dune minted in the 20th transaction of the 500th block is `500:20`.
 
 ### Etching
 
@@ -32,9 +32,9 @@ Dunes come into existence by being etched. Etching creates a dune and sets its p
 
 ##### Name
 
-Names consist of the letters A through Z and are between one and twenty-eight characters long. For example WHOLETTHEDUNESOUT is a dune name.
+Names consist of the letters `A` through `Z` and are between one and twenty-eight characters long. For example `WHOLETTHEDUNESOUT` is a dune name.
 
-Names may contain spacers, represented as bullets, to aid readability. WHOLETTHEDUNESOUT might be etched as WHO•LET•THE•DUNES•OUT.
+Names may contain spacers, represented as bullets, to aid readability. `WHOLETTHEDUNESOUT` might be etched as `WHO•LET•THE•DUNES•OUT`.
 
 The uniqueness of a name does not depend on spacers. Thus, a dune may not be etched with the same sequence of letters as an existing dune, even if it has different spacers.
 
@@ -44,11 +44,11 @@ A dune's divisibility is how finely it may be divided into its atomic units. Div
 
 ##### Symbol
 
-A dune's currency symbol is a single Unicode code point, for example $, ⧉, or 🧿, displayed after quantities of that dune.
+A dune's currency symbol is a single Unicode code point, for example `$`, `⧉`, or `🧿`, displayed after quantities of that dune.
 
-101 atomic units of a dune with divisibility 2 and symbol 🧿 would be rendered as 1.01 🧿.
+101 atomic units of a dune with divisibility 2 and symbol `🧿` would be rendered as `1.01 🧿`.
 
-If a dune does not have a symbol, the generic currency sign ¤, also called a scarab, should be used.
+If a dune does not have a symbol, the generic currency sign `¤`, also called a scarab, should be used.
 
 ##### Premine
 
@@ -98,15 +98,15 @@ A dunestone may contain any number of edicts. Edicts consist of a dune ID, an am
 
 ##### Pointer
 
-After all edicts are processed, remaining unallocated dunes are transferred to the transaction's first non-OP_RETURN output. A dunestone may optionally contain a pointer that specifies an alternative default output.
+After all edicts are processed, remaining unallocated dunes are transferred to the transaction's first `non-OP_RETURN` output. A dunestone may optionally contain a pointer that specifies an alternative default output.
 
 ##### Burning
 
-Dunes may be burned by transferring them to an OP_RETURN output with an edict or pointer.
+Dunes may be burned by transferring them to an `OP_RETURN` output with an edict or pointer.
 
 ##### Cenotaphs
 
-Dunestones may be malformed for a number of reasons, including non-pushdata opcodes in the dunestone OP_RETURN, invalid varints, or unrecognized dunestone fields.
+Dunestones may be malformed for a number of reasons, including non-pushdata opcodes in the dunestone `OP_RETURN`, invalid varints, or unrecognized dunestone fields.
 
 Malformed dunestones are termed cenotaphs.
 
