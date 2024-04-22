@@ -2,6 +2,8 @@
 
 A minter and protocol for dunes on Dogecoin.
 
+You can find general information about Dunes [here](./DUNES.md).
+
 ## ⚠️⚠️⚠️ Important ⚠️⚠️⚠️
 
 Use this wallet for dunes only! Always mint from this wallet to a different address. This wallet is not meant for storing funds or dunes.
