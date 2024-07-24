@@ -427,6 +427,36 @@ function encodeToTuple(n) {
   return tupleRepresentation;
 }
 
+const getDuneBalance = async (dune_name, address) => {
+  const utxos = await fetchAllUnspentOutputs(address);
+  let balance = 0n;
+  const utxoHashes = utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
+  const chunkSize = 10; // Size of each chunk
+
+  // Function to chunk the utxoHashes array
+  const chunkedUtxoHashes = [];
+  for (let i = 0; i < utxoHashes.length; i += chunkSize) {
+    chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
+  }
+
+  // Process each chunk
+  for (const chunk of chunkedUtxoHashes) {
+    const allDunes = await getDunesForUtxos(chunk);
+
+    for (const dunesInfo of allDunes) {
+      for (const singleDunesInfo of dunesInfo.dunes) {
+        const [name, { amount }] = singleDunesInfo;
+
+        if (name === dune_name) {
+          balance += BigInt(amount);
+        }
+      }
+    }
+  }
+
+  return balance;
+};
+
 program
   .command("printDunes")
   .description("Prints dunes of wallet")
@@ -477,31 +507,7 @@ program
   .argument("<address>", "Wallet address")
   .description("Prints tick balance of wallet")
   .action(async (dune_name, address) => {
-    const utxos = await fetchAllUnspentOutputs(address);
-    let balance = 0n;
-    const utxoHashes = utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
-    const chunkSize = 10; // Size of each chunk
-
-    // Function to chunk the utxoHashes array
-    const chunkedUtxoHashes = [];
-    for (let i = 0; i < utxoHashes.length; i += chunkSize) {
-      chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
-    }
-
-    // Process each chunk
-    for (const chunk of chunkedUtxoHashes) {
-      const allDunes = await getDunesForUtxos(chunk);
-
-      for (const dunesInfo of allDunes) {
-        for (const singleDunesInfo of dunesInfo.dunes) {
-          const [name, { amount }] = singleDunesInfo;
-
-          if (name === dune_name) {
-            balance += BigInt(amount);
-          }
-        }
-      }
-    }
+    const balance = await getDuneBalance(dune_name, address);
 
     // Output the total balance
     console.log(`${balance.toString()} ${dune_name}`);
@@ -1356,6 +1362,17 @@ walletCommand
     await walletSplit(splits);
   });
 
+//
+walletCommand
+  .command("splitutxo")
+  .description("Split dune allocation from one utxo to multiple utxos")
+  .argument("<utxotxid>", "UTXO to split")
+  .argument("<split>", "number of utxos to split")
+  .argument("<ticker>", "ticker of dune to split")
+  .action(async (utxotxid, split, ticker) => {
+    await utxoSplit(utxotxid, split, ticker);
+  });
+
 async function main() {
   program.parse();
 }
@@ -1479,6 +1496,76 @@ async function walletSplit(splits) {
   await broadcast(tx, true);
 
   console.log(tx.hash);
+}
+
+async function utxoSplit(utxotxid, split, ticker) {
+  if (split > 12) {
+    throw new Error("Can't split more than 12 ");
+  }
+
+  const wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
+
+  // same txids for utxo? even when dune was split?
+  // find last entry matching utxos in array
+  const selectedUtxo = wallet.utxos
+    .slice()
+    .reverse()
+    .find((utxo) => utxo.txid === utxotxid);
+
+  if (!selectedUtxo) {
+    throw new Error("cant find utxo");
+  }
+
+  // will get the dune balance to split
+  const duneBalance = Number(await getDuneBalance(ticker, wallet.address));
+  console.log("dune balance:", duneBalance);
+  let balanceSplit = Math.trunc(duneBalance / split);
+  let remainderSplit = duneBalance % split;
+
+  const splitUtxos = [];
+
+  for (let i = 1; i <= split; i++) {
+    splitUtxos.push({
+      txid: utxotxid,
+      satoshis: balanceSplit,
+    });
+  }
+
+  // give the remainder to first utxo
+  if (remainderSplit) {
+    splitUtxos[0].satoshis += remainderSplit;
+  }
+
+  console.log(
+    "update reference utxo data. note: satoshis are the balance to be sent",
+    splitUtxos
+  );
+
+  // next step just need to implement with  dogecore syntax
+  // will send dunes to txid based on splitUtxos array
+  // error "no dunes"  ?
+  // utxo vout problem causing dune not found?
+  // split amounts in updated wallet wrong altough total in split prmompt is correct?
+  try {
+    await walletSendDunes(
+      selectedUtxo.txid,
+      selectedUtxo.vout,
+      //dune
+      ticker,
+      //just followed the example in the documentation  for decimals
+      // also the decimals / divisibility of dune created
+      8,
+      // amountsAsArray just send the satoshis for entry in array
+      splitUtxos.map((update) => update.satoshis),
+      // addressesAsArray,
+      Array.from({ length: splitUtxos.length }, () => wallet.address)
+    );
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
+
+  console.log("split success");
 }
 
 async function fund(wallet, tx, onlySafeUtxos = true) {
