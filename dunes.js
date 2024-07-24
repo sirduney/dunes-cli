@@ -427,6 +427,36 @@ function encodeToTuple(n) {
   return tupleRepresentation;
 }
 
+const getDuneBalance = async (dune_name, address) => {
+  const utxos = await fetchAllUnspentOutputs(address);
+  let balance = 0n;
+  const utxoHashes = utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
+  const chunkSize = 10; // Size of each chunk
+
+  // Function to chunk the utxoHashes array
+  const chunkedUtxoHashes = [];
+  for (let i = 0; i < utxoHashes.length; i += chunkSize) {
+    chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
+  }
+
+  // Process each chunk
+  for (const chunk of chunkedUtxoHashes) {
+    const allDunes = await getDunesForUtxos(chunk);
+
+    for (const dunesInfo of allDunes) {
+      for (const singleDunesInfo of dunesInfo.dunes) {
+        const [name, { amount }] = singleDunesInfo;
+
+        if (name === dune_name) {
+          balance += BigInt(amount);
+        }
+      }
+    }
+  }
+
+  return balance;
+};
+
 program
   .command("printDunes")
   .description("Prints dunes of wallet")
@@ -477,31 +507,7 @@ program
   .argument("<address>", "Wallet address")
   .description("Prints tick balance of wallet")
   .action(async (dune_name, address) => {
-    const utxos = await fetchAllUnspentOutputs(address);
-    let balance = 0n;
-    const utxoHashes = utxos.map((utxo) => `${utxo.txid}:${utxo.vout}`);
-    const chunkSize = 10; // Size of each chunk
-
-    // Function to chunk the utxoHashes array
-    const chunkedUtxoHashes = [];
-    for (let i = 0; i < utxoHashes.length; i += chunkSize) {
-      chunkedUtxoHashes.push(utxoHashes.slice(i, i + chunkSize));
-    }
-
-    // Process each chunk
-    for (const chunk of chunkedUtxoHashes) {
-      const allDunes = await getDunesForUtxos(chunk);
-
-      for (const dunesInfo of allDunes) {
-        for (const singleDunesInfo of dunesInfo.dunes) {
-          const [name, { amount }] = singleDunesInfo;
-
-          if (name === dune_name) {
-            balance += BigInt(amount);
-          }
-        }
-      }
-    }
+    const balance = await getDuneBalance(dune_name, address);
 
     // Output the total balance
     console.log(`${balance.toString()} ${dune_name}`);
@@ -1356,6 +1362,17 @@ walletCommand
     await walletSplit(splits);
   });
 
+//
+walletCommand
+  .command("splitutxo")
+  .description("Split dune allocation from one utxo to multiple utxos")
+  .argument("<utxotxid>", "UTXO to split")
+  .argument("<split>", "number of utxos to split")
+  .argument("<ticker>", "ticker of dune to split")
+  .action(async (utxotxid, split, ticker) => {
+    await utxoSplit(utxotxid, split, ticker);
+  });
+
 async function main() {
   program.parse();
 }
@@ -1479,6 +1496,54 @@ async function walletSplit(splits) {
   await broadcast(tx, true);
 
   console.log(tx.hash);
+}
+
+async function utxoSplit(utxotxid, split, ticker) {
+  if (split > 12) {
+    throw new Error("Can't split more than 12 ");
+  }
+
+  const wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
+
+  let selectedUtxo = wallet.utxos.find((utxo) => utxo.txid === utxotxid);
+
+  if (!selectedUtxo) {
+    throw new Error("cant find utxo");
+  }
+
+  // will get the dune balance to split
+  const duneBalance = Number(await getDuneBalance(ticker, wallet.address));
+  console.log(duneBalance);
+  let balanceSplit = Math.trunc(duneBalance / split);
+
+  let selectedUtxoBal = selectedUtxo.satoshis;
+
+  // update selected utxo balance
+  selectedUtxo.satoshis += duneBalance % split;
+  selectedUtxo.vout += 1;
+
+  const splitUtxos = [];
+
+  for (let i = 1; i <= split; i++) {
+    splitUtxos.push({
+      txid: utxotxid,
+      vout: 1,
+      satoshis: balanceSplit,
+      ticker,
+      script: selectedUtxo.script,
+    });
+  }
+
+  const updatedUtxo = [...wallet.utxos, ...splitUtxos];
+
+  // add remainder to orignal utxo
+  // console.log(wallet);
+  // console.log("wallet utxos", wallet.utxos);
+
+  // console.log("selected utxo updated", selectedUtxo);
+  // console.log("split utxo", splitUtxos);
+
+  console.log("udpated utxo", updatedUtxo);
 }
 
 async function fund(wallet, tx, onlySafeUtxos = true) {
