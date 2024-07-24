@@ -1541,12 +1541,11 @@ async function utxoSplit(utxotxid, split, ticker) {
     splitUtxos
   );
 
-  // console.log(selectedUtxo.txid + ":1");
-
   // next step just need to implement with  dogecore syntax
   // will send dunes to txid based on splitUtxos array
   // error "no dunes"  ?
   // utxo vout problem causing dune not found?
+  // split amounts in updated wallet wrong altough total in split prmompt is correct?
   try {
     await walletSendDunes(
       selectedUtxo.txid,
