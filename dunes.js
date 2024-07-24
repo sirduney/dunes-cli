@@ -1505,6 +1505,7 @@ async function utxoSplit(utxotxid, split, ticker) {
 
   const wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
+  // same txids for utxo? even when dune was split?
   let selectedUtxo = wallet.utxos.find((utxo) => utxo.txid === utxotxid);
 
   if (!selectedUtxo) {
@@ -1516,34 +1517,51 @@ async function utxoSplit(utxotxid, split, ticker) {
   console.log(duneBalance);
   let balanceSplit = Math.trunc(duneBalance / split);
 
-  let selectedUtxoBal = selectedUtxo.satoshis;
-
-  // update selected utxo balance
-  selectedUtxo.satoshis += duneBalance % split;
-  selectedUtxo.vout += 1;
+  // update selected utxo balance to be sent  remainder of dune
+  selectedUtxo.satoshis = duneBalance % split;
 
   const splitUtxos = [];
 
   for (let i = 1; i <= split; i++) {
     splitUtxos.push({
       txid: utxotxid,
-      vout: 1,
+      vout: 0,
       satoshis: balanceSplit,
       ticker,
-      script: selectedUtxo.script,
     });
   }
 
-  const updatedUtxo = [...wallet.utxos, ...splitUtxos];
+  const updateDataUtxo = [selectedUtxo, ...splitUtxos];
 
-  // add remainder to orignal utxo
-  // console.log(wallet);
-  // console.log("wallet utxos", wallet.utxos);
+  console.log(
+    "update reference utxo data. note: satoshis are the balance to be sent",
+    updateDataUtxo
+  );
 
-  // console.log("selected utxo updated", selectedUtxo);
-  // console.log("split utxo", splitUtxos);
-
-  console.log("udpated utxo", updatedUtxo);
+  // next step just need to implement with  dogecore syntax
+  // will send dunes to txid based on updateDataUtxo array
+  for (let i = 0; i <= updateDataUtxo.length; i++) {
+    // error "no dunes"  ?
+    // utxo vout problem causing dune not found?
+    try {
+      await walletSendDunes(
+        selectedUtxo.txid,
+        // assumes that vout is updated every send
+        selectedUtxo.vout + i,
+        //dune
+        ticker,
+        //just followed the example in the documentation  for decimals
+        8,
+        // amountsAsArray just send the satoshis for entry in array
+        [updateDataUtxo[i].satoshis],
+        // addressesAsArray,
+        [wallet.address]
+      );
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  }
 }
 
 async function fund(wallet, tx, onlySafeUtxos = true) {
