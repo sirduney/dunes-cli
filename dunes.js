@@ -1514,54 +1514,52 @@ async function utxoSplit(utxotxid, split, ticker) {
 
   // will get the dune balance to split
   const duneBalance = Number(await getDuneBalance(ticker, wallet.address));
-  console.log(duneBalance);
+  console.log("dune balance:", duneBalance);
   let balanceSplit = Math.trunc(duneBalance / split);
-
-  // update selected utxo balance to be sent  remainder of dune
-  selectedUtxo.satoshis = duneBalance % split;
+  let remainderSplit = duneBalance % split;
 
   const splitUtxos = [];
 
   for (let i = 1; i <= split; i++) {
     splitUtxos.push({
       txid: utxotxid,
-      vout: 0,
       satoshis: balanceSplit,
-      ticker,
     });
   }
 
-  const updateDataUtxo = [selectedUtxo, ...splitUtxos];
+  // give the remainder to first utxo
+  if (remainderSplit) {
+    splitUtxos[0].satoshis += remainderSplit;
+  }
 
   console.log(
     "update reference utxo data. note: satoshis are the balance to be sent",
-    updateDataUtxo
+    splitUtxos
   );
 
   // next step just need to implement with  dogecore syntax
-  // will send dunes to txid based on updateDataUtxo array
-  for (let i = 0; i <= updateDataUtxo.length; i++) {
-    // error "no dunes"  ?
-    // utxo vout problem causing dune not found?
-    try {
-      await walletSendDunes(
-        selectedUtxo.txid,
-        // assumes that vout is updated every send
-        selectedUtxo.vout + i,
-        //dune
-        ticker,
-        //just followed the example in the documentation  for decimals
-        8,
-        // amountsAsArray just send the satoshis for entry in array
-        [updateDataUtxo[i].satoshis],
-        // addressesAsArray,
-        [wallet.address]
-      );
-    } catch (error) {
-      console.error(error);
-      process.exit(1);
-    }
+  // will send dunes to txid based on splitUtxos array
+  // error "no dunes"  ?
+  // utxo vout problem causing dune not found?
+  try {
+    await walletSendDunes(
+      selectedUtxo.txid,
+      selectedUtxo.vout,
+      //dune
+      ticker,
+      //just followed the example in the documentation  for decimals
+      8,
+      // amountsAsArray just send the satoshis for entry in array
+      splitUtxos.map((update) => update.satoshis),
+      // addressesAsArray,
+      [wallet.address]
+    );
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
   }
+
+  console.log("split success");
 }
 
 async function fund(wallet, tx, onlySafeUtxos = true) {
