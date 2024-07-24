@@ -1506,7 +1506,11 @@ async function utxoSplit(utxotxid, split, ticker) {
   const wallet = JSON.parse(fs.readFileSync(WALLET_PATH));
 
   // same txids for utxo? even when dune was split?
-  let selectedUtxo = wallet.utxos.find((utxo) => utxo.txid === utxotxid);
+  // find last entry matching utxos in array
+  const selectedUtxo = wallet.utxos
+    .slice()
+    .reverse()
+    .find((utxo) => utxo.txid === utxotxid);
 
   if (!selectedUtxo) {
     throw new Error("cant find utxo");
@@ -1536,6 +1540,8 @@ async function utxoSplit(utxotxid, split, ticker) {
     "update reference utxo data. note: satoshis are the balance to be sent",
     splitUtxos
   );
+
+  // console.log(selectedUtxo.txid + ":1");
 
   // next step just need to implement with  dogecore syntax
   // will send dunes to txid based on splitUtxos array
