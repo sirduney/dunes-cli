@@ -1548,11 +1548,12 @@ async function utxoSplit(utxotxid, split, ticker) {
       //dune
       ticker,
       //just followed the example in the documentation  for decimals
+      // also the decimals / divisibility of dune created
       8,
       // amountsAsArray just send the satoshis for entry in array
       splitUtxos.map((update) => update.satoshis),
       // addressesAsArray,
-      [wallet.address]
+      Array.from({ length: splitUtxos.length }, () => wallet.address)
     );
   } catch (error) {
     console.error(error);
