@@ -1372,47 +1372,40 @@ function walletNew() {
   }
 }
 
-if (!process.env.UNSPENT_API) {
-  throw new Error("UNSPENT_API not set");
+if (!process.env.ORD) {
+  throw new Error("ORD not set");
 }
 
-const unspentApi = axios.create({
-  baseURL: process.env.UNSPENT_API,
+const ordApi = axios.create({
+  baseURL: process.env.ORD,
   timeout: 100_000,
 });
-axiosRetry(unspentApi, axiosRetryOptions);
+axiosRetry(ordApi, axiosRetryOptions);
 
 async function fetchAllUnspentOutputs(walletAddress) {
-  let page = 1; // Start from the first page
   let allUnspentOutputs = []; // Array to hold all unspent outputs
-  let hasMoreData = true; // Flag to keep the loop running until no more data is available
+  try {
+    console.log(`Fetching all utxos...`);
 
-  while (hasMoreData) {
-    try {
-      console.log(`Fetching unspent outputs for page ${page}...`);
-      // Fetch data from the API for the given page
-      const response = await unspentApi.get(`/${walletAddress}/${page}`);
-      const outputs = response.data.unspent_outputs;
+    const response = await ordApi.get(
+      `utxos/balance/${walletAddress}?show_all=true&show_unsafe=true`
+    );
+    const outputs = response.data.utxos;
 
-      // Check if the response contains any unspent outputs
-      if (outputs && outputs.length > 0) {
-        // Map and concatenate the current page's data to the total
-        const mappedOutputs = outputs.map((output) => ({
-          txid: output.tx_hash,
-          vout: output.tx_output_n,
-          script: output.script,
-          satoshis: Number(output.value),
-        }));
+    // Check if the response contains any unspent outputs
+    if (outputs && outputs.length > 0) {
+      // Map and concatenate the current page's data to the total
+      const mappedOutputs = outputs.map((output) => ({
+        txid: output.txid,
+        vout: output.vout,
+        script: output.script,
+        satoshis: Number(output.shibes),
+      }));
 
-        allUnspentOutputs = allUnspentOutputs.concat(mappedOutputs);
-        page++; // Increment the page number to fetch the next page
-      } else {
-        hasMoreData = false; // No more data to fetch, exit the loop
-      }
-    } catch (error) {
-      console.error("Error fetching unspent outputs:", error);
-      break; // Exit the loop in case of an error
+      allUnspentOutputs = allUnspentOutputs.concat(mappedOutputs);
     }
+  } catch (error) {
+    console.error("Error fetching utxos:", error);
   }
 
   return allUnspentOutputs; // Return the collected unspent outputs
@@ -1662,11 +1655,6 @@ async function broadcast(tx, retry) {
 }
 
 async function getDunesForUtxos(hashes) {
-  const ordApi = axios.create({
-    baseURL: process.env.ORD,
-    timeout: 100_000,
-  });
-
   try {
     const response = await ordApi.get(`/outputs/${hashes.join(",")}`);
     const parsed = response.data;
@@ -1687,11 +1675,6 @@ async function getDunesForUtxos(hashes) {
 }
 
 async function getDunesForUtxo(outputHash) {
-  const ordApi = axios.create({
-    baseURL: process.env.ORD,
-    timeout: 100_000,
-  });
-
   try {
     const response = await ordApi.get(`/output/${outputHash}`);
     const html = response.data;
@@ -1718,11 +1701,6 @@ async function getDunesForUtxo(outputHash) {
 }
 
 async function getDune(dune) {
-  const ordApi = axios.create({
-    baseURL: process.env.ORD,
-    timeout: 100_000,
-  });
-
   try {
     // Making a GET request using axios
     const { data } = await ordApi.get(`dune/${dune}`);
