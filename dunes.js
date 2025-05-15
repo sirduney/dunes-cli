@@ -289,13 +289,14 @@ class Edict {
 }
 
 class Terms {
-  constructor(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd) {
+  constructor(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd, price = null) {
     this.limit = limit !== undefined ? limit : null;
     this.cap = cap !== undefined ? cap : null;
     this.offsetStart = offsetStart !== undefined ? offsetStart : null;
     this.offsetEnd = offsetEnd !== undefined ? offsetEnd : null;
     this.heightStart = heightStart !== undefined ? heightStart : null;
     this.heightEnd = heightEnd !== undefined ? heightEnd : null;
+    if (price) this.price = price;
   }
 }
 
@@ -892,6 +893,8 @@ program
     "<openMint>",
     "Set this to true to allow minting, taking terms (limit, cap, height, offset) as restrictions"
   )
+  .argument("<priceAmount>", "Mint price in shibes (u128 string, or 'null')")
+  .argument("<pricePayTo>", "Pay-to address for mint price (or 'null')")
   .action(
     async (
       tick,
@@ -905,7 +908,9 @@ program
       offsetEnd,
       premine,
       turbo,
-      openMint
+      openMint,
+      priceAmount,
+      pricePayTo
     ) => {
       console.log("Deploying open Dune...");
       console.log(
@@ -920,7 +925,9 @@ program
         offsetEnd,
         premine,
         turbo,
-        openMint
+        openMint,
+        priceAmount,
+        pricePayTo
       );
 
       cap = cap === "null" ? null : cap;
@@ -932,6 +939,14 @@ program
       turbo = turbo === "null" ? null : turbo === "true";
 
       openMint = openMint.toLowerCase() === "true";
+
+      let price = null;
+      if (priceAmount !== "null" && pricePayTo !== "null") {
+        price = {
+          amount: priceAmount,
+          pay_to: pricePayTo,
+        };
+      }
 
       if (symbol) {
         if (symbol.length !== 1 && !isSingleEmoji(symbol)) {
@@ -959,7 +974,7 @@ program
       }
 
       const terms = openMint
-        ? new Terms(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd)
+        ? new Terms(limit, cap, offsetStart, offsetEnd, heightStart, heightEnd, price)
         : null;
 
       const etching = new Etching(
@@ -1604,8 +1619,7 @@ async function broadcast(tx, retry) {
 
   const makePostRequest = async () => {
     try {
-      const res = await axios.post(process.env.NODE_RPC_URL, body, options);
-      return res;
+      return await axios.post(process.env.NODE_RPC_URL, body, options);
     } catch (error) {
       return await axios.post(
         process.env.FALLBACK_NODE_RPC_URL || process.env.NODE_RPC_URL,
@@ -1618,7 +1632,7 @@ async function broadcast(tx, retry) {
   let res;
   while (true) {
     try {
-      res = await retryAsync(async () => await makePostRequest(), 10, 30000);
+      res = await retryAsync(makePostRequest, 10, 30000);
       break;
     } catch (e) {
       if (!retry) throw e;
