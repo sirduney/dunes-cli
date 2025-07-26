@@ -113,3 +113,17 @@ Malformed dunestones are termed cenotaphs.
 Dunes input to a transaction with a cenotaph are burned. Dunes etched in a transaction with a cenotaph are set as unmintable. Mints in a transaction with a cenotaph count towards the mint cap, but the minted dunes are burned.
 
 Cenotaphs are an upgrade mechanism, allowing dunestones to be given new semantics that change how dunes are created and transferred, while not misleading unupgraded clients as to the location of those dunes, as unupgraded clients will see those dunes as having been burned.
+
+### Parent Inscriptions
+Dunes can be linked to a "parent" inscription, establishing a hierarchical relationship. This allows Dunes to be associated with other digital assets, such as images or other Dunes.
+
+**How It Works**:
+- During etching, you can specify a `parentId` (the inscription ID of the parent, e.g., `e6c6efe91b6084eae2c8a2fd6470d3d0dbfbb342f1b8601904f45be8095058e2i0`).
+- The etching transaction spends the parent inscription’s UTXO, embedding the link in the blockchain.
+- The etcher must control the parent inscription (i.e., have its private key).
+
+**Use Cases**:
+- Associate multiple Dunes with a single parent (e.g., an image inscription).
+- Create structured collections of digital assets with parent-child relationships.
+
+**Note**: This feature is optional. Dunes can be etched without a parent if no `parentId` is provided.
